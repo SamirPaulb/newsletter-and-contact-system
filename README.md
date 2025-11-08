@@ -238,7 +238,7 @@ Check worker logs in Cloudflare Dashboard:
 
 ## 📄 License
 
-MIT
+[Apache-2.0 License](https://www.apache.org/licenses/LICENSE-2.0)
 
 ## 👤 Author
 
