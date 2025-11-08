@@ -1,0 +1,25 @@
+{
+  "name": "cloudflare-workers-newsletter",
+  "version": "2.0.0",
+  "description": "Modular newsletter and contact system using Cloudflare Workers",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "worker-mailer": "^1.1.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240722.0",
+    "wrangler": "^3.60.3"
+  },
+  "author": "SamirPaulb",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SamirPaulb/cloudflare-workers.git"
+  }
+}

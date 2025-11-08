@@ -1,0 +1,115 @@
+name = "newsletter-worker"
+main = "src/index.js"
+compatibility_date = "2024-12-31"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[triggers]
+crons = [
+  "0 0 * * sun,mon,tue,wed,thu,fri,sat",  # Daily at 00:00 UTC
+  "0 0 * * sat"                            # Weekly at 00:00 UTC on Saturday
+]
+
+[[kv_namespaces]]
+binding = "KV"
+# id = "YOUR_KV_NAMESPACE_ID_HERE"  # Set this in .dev.vars or via environment variable
+# preview_id = "YOUR_KV_PREVIEW_ID_HERE"  # Set this in .dev.vars or via environment variable
+
+[vars]
+# Email Provider Configuration - 'gmail' or 'worker-email'
+EMAIL_PROVIDER = "gmail"
+
+# Gmail SMTP Configuration
+GMAIL_HOST = "smtp.gmail.com"
+GMAIL_PORT = 587
+
+# Common Email Configuration
+EMAIL_FROM_NAME = "Newsletter"
+
+# RSS Feed Configuration
+RSS_FEED_URL = "https://samirpaulb.github.io/index.xml"
+USER_AGENT = "Newsletter-Bot/2.0"
+FETCH_TIMEOUT_MS = 60000
+
+# Batching and Pacing (reduced for direct SMTP)
+BATCH_SIZE = 100
+BATCH_WAIT_MINUTES = 5
+MAX_POSTS_PER_RUN = 1
+
+# GitHub Configuration for Backups
+GITHUB_OWNER = "SamirPaulb"  # Your GitHub username
+GITHUB_BACKUP_REPO = "database-backup"  # Repository for KV backups (make sure it's private)
+GITHUB_BACKUP_BRANCH = "main"
+GITHUB_SUBSCRIBER_BACKUP_PATH = "cloudflare-workers-kv-subscriber-backup.csv"
+GITHUB_CONTACT_BACKUP_PATH = "cloudflare-workers-kv-contact-backup.csv"
+
+# Contact Form GitHub Configuration
+GITHUB_CONTACT_REPO = "cloudflare-workers"
+GITHUB_CONTACT_BRANCH = "contact"
+GITHUB_CONTACT_PATH = "data/contact.json"
+
+# Cron Configuration
+WEEKLY_CRON = "0 0 * * sat"
+
+# KV Storage Prefixes
+PREFIX_SUBSCRIBER = "subscriber"
+PREFIX_EMAIL_QUEUE = "email-queue"
+PREFIX_NEWSLETTER_SENT = "newsletter-sent"
+PREFIX_NEWSLETTER_SENT_URL = "newsletter-sent-url"
+PREFIX_CONTACT = "contact"
+PREFIX_RATELIMIT = "ratelimit"
+PREFIX_CAPTCHA = "captcha"
+PREFIX_BOT = "bot"
+PREFIX_BOT_DETECT = "bot-detect"
+
+# Rate Limiting
+RATE_LIMIT_MAX = 5
+RATE_LIMIT_WINDOW_HOURS = 24
+
+# URL Paths
+SUBSCRIBE_WEB_PATH = "/subscribe"
+SUBSCRIBE_API_PATH = "/api/subscribe"
+UNSUBSCRIBE_WEB_PATH = "/unsubscribe"
+UNSUBSCRIBE_API_PATH = "/api/unsubscribe"
+CONTACT_WEB_PATH = "/contact"
+CONTACT_API_PATH = "/api/contact"
+
+# Site Configuration
+SITE_URL = "https://samirpaulb.github.io"
+UNSUBSCRIBE_URL = "https://samirpaulb.github.io/unsubscribe-newsletter/"
+SITE_OWNER = "Samir P."
+
+# Optional: extend disposable domain blocklist (CSV)
+DISPOSABLE_DOMAINS = ""
+
+# Worker Email Configuration (optional - for when using worker-email provider)
+# WORKER_EMAIL_DOMAIN = "yourdomain.com"
+
+# Workers Logs
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+# ===================================================================
+# SECRETS TO CONFIGURE IN CLOUDFLARE DASHBOARD
+# ===================================================================
+# The following secrets must be set in the Cloudflare Dashboard:
+#
+# 1. GMAIL_USER - Gmail address for SMTP authentication
+# 2. GMAIL_PASSWORD - Gmail App Password (not regular password)
+# 3. EMAIL_FROM_ADDRESS - From email address (can be same as GMAIL_USER)
+# 4. EMAIL_REPLY_TO - Reply-to email address (optional)
+# 5. GITHUB_TOKEN - GitHub personal access token with repo write access
+# 6. TURNSTILE_SITE_KEY - Cloudflare Turnstile site key
+# 7. TURNSTILE_SECRET_KEY - Cloudflare Turnstile secret key
+# 8. WORKER_EMAIL_FROM - (Optional) For worker-email provider
+#
+# To set secrets, use:
+# wrangler secret put SECRET_NAME
+# Or configure them in the Cloudflare Dashboard under Settings > Variables
+# ===================================================================
