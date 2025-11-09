@@ -5,6 +5,131 @@
 import { cleanupPrefix, getQueuesByStatus } from '../utils/kv.js';
 
 /**
+ * Clean up expired rate limit and bot detection entries
+ */
+async function cleanExpiredEntries(env, config) {
+  const results = {
+    total: 0,
+    prefixes: []
+  };
+
+  try {
+    // Clean up old rate limit entries (older than 24 hours)
+    const rateLimitCleaned = await cleanExpiredByPrefix(
+      env,
+      config.PREFIX_RATELIMIT,
+      24 * 60 * 60 * 1000 // 24 hours
+    );
+    if (rateLimitCleaned > 0) {
+      results.total += rateLimitCleaned;
+      results.prefixes.push('ratelimit');
+      console.log(`Cleaned ${rateLimitCleaned} expired rate limit entries`);
+    }
+
+    // Clean up old bot detection entries (older than 7 days)
+    const botDetectCleaned = await cleanExpiredByPrefix(
+      env,
+      config.PREFIX_BOT_DETECT,
+      7 * 24 * 60 * 60 * 1000 // 7 days
+    );
+    if (botDetectCleaned > 0) {
+      results.total += botDetectCleaned;
+      results.prefixes.push('bot-detect');
+      console.log(`Cleaned ${botDetectCleaned} expired bot detection entries`);
+    }
+
+    // Clean up old captcha entries (older than 1 hour)
+    const captchaCleaned = await cleanExpiredByPrefix(
+      env,
+      config.PREFIX_CAPTCHA,
+      60 * 60 * 1000 // 1 hour
+    );
+    if (captchaCleaned > 0) {
+      results.total += captchaCleaned;
+      results.prefixes.push('captcha');
+      console.log(`Cleaned ${captchaCleaned} expired captcha entries`);
+    }
+
+    // Clean up old bot entries (older than 30 days)
+    const botCleaned = await cleanExpiredByPrefix(
+      env,
+      config.PREFIX_BOT,
+      30 * 24 * 60 * 60 * 1000 // 30 days
+    );
+    if (botCleaned > 0) {
+      results.total += botCleaned;
+      results.prefixes.push('bot');
+      console.log(`Cleaned ${botCleaned} expired bot entries`);
+    }
+
+  } catch (error) {
+    console.error('Error cleaning expired entries:', error);
+  }
+
+  return results;
+}
+
+/**
+ * Clean expired entries by prefix based on age
+ */
+async function cleanExpiredByPrefix(env, prefix, maxAgeMs) {
+  let deleted = 0;
+  let cursor = null;
+  let hasMore = true;
+  const now = Date.now();
+
+  try {
+    while (hasMore) {
+      const list = await env.KV.list({ prefix, limit: 100, cursor });
+      if (!list || !list.keys) break;
+
+      for (const key of list.keys) {
+        try {
+          // Get the value to check timestamp
+          const value = await env.KV.get(key.name);
+          if (value) {
+            try {
+              const data = JSON.parse(value);
+              const timestamp = data.timestamp || data.createdAt || data.date;
+              if (timestamp) {
+                const age = now - new Date(timestamp).getTime();
+                if (age > maxAgeMs) {
+                  await env.KV.delete(key.name);
+                  deleted++;
+                }
+              } else {
+                // No timestamp, delete if it's an old format entry
+                await env.KV.delete(key.name);
+                deleted++;
+              }
+            } catch {
+              // If it's not JSON or has no timestamp, check metadata
+              const metadata = key.metadata || {};
+              if (metadata.timestamp) {
+                const age = now - new Date(metadata.timestamp).getTime();
+                if (age > maxAgeMs) {
+                  await env.KV.delete(key.name);
+                  deleted++;
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error(`Error processing ${key.name}:`, error);
+        }
+      }
+
+      hasMore = !list.list_complete;
+      cursor = list.cursor;
+    }
+  } catch (error) {
+    console.error(`Error cleaning prefix ${prefix}:`, error);
+  }
+
+  return deleted;
+}
+
+/**
  * Run cleanup tasks
  */
 export async function runCleanup(env, config) {
@@ -14,10 +139,16 @@ export async function runCleanup(env, config) {
     cleanedTotal: 0,
     keptPrefixes: [],
     cleanedPrefixes: [],
+    expiredPrefixes: [],
     timestamp: new Date().toISOString()
   };
 
   try {
+    // First, clean up expired rate limit and bot detection entries
+    const expiredCleaned = await cleanExpiredEntries(env, config);
+    results.expiredPrefixes = expiredCleaned.prefixes;
+    results.cleanedTotal += expiredCleaned.total;
+
     // Define what prefixes to KEEP (everything else will be deleted)
     const keepPrefixes = [
       config.PREFIX_SUBSCRIBER,        // Keep all subscribers
@@ -27,7 +158,8 @@ export async function runCleanup(env, config) {
       config.KEEP_PREFIX_MAINTENANCE,  // Keep maintenance metadata
       config.KEEP_PREFIX_DAILY,        // Keep daily run metadata
       config.KEEP_PREFIX_DEPLOYMENT,   // Keep deployment info
-      config.KEEP_PREFIX_STATS         // Keep stats data
+      config.KEEP_PREFIX_STATS,        // Keep stats data
+      config.PREFIX_EMAIL_QUEUE       // Keep email queues (they have their own lifecycle)
     ];
 
     // Get all KV keys and clean up those not in keep list
@@ -86,10 +218,17 @@ export async function runCleanup(env, config) {
       cursor = list.cursor;
     }
 
-    results.cleanedTotal = deleted;
+    results.cleanedTotal += deleted;
     console.log(`Cleanup completed: Processed ${processed} keys, deleted ${deleted} keys`);
     console.log(`Kept prefixes: ${results.keptPrefixes.join(', ')}`);
     console.log(`Cleaned prefixes: ${results.cleanedPrefixes.join(', ')}`);
+    console.log(`Expired prefixes cleaned: ${results.expiredPrefixes.join(', ')}`);
+
+    // Store cleanup results
+    await env.KV.put(`${config.KEEP_PREFIX_MAINTENANCE}cleanup`, JSON.stringify({
+      results: results,
+      timestamp: results.timestamp
+    }));
 
     return results;
   } catch (error) {

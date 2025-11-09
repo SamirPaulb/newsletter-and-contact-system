@@ -18,6 +18,42 @@ export async function performBackup(env, config) {
   };
 
   try {
+    // Check if GITHUB_TOKEN is configured
+    if (!config.GITHUB_TOKEN) {
+      const error = 'GITHUB_TOKEN is not configured. Please set it in environment variables.';
+      console.error(error);
+      results.error = error;
+      results.subscribers.error = error;
+      results.contacts.error = error;
+
+      // Store error state
+      await env.KV.put(`${config.KEEP_PREFIX_MAINTENANCE}backup`, JSON.stringify({
+        results: results,
+        timestamp: results.timestamp,
+        error: error
+      }));
+
+      return results;
+    }
+
+    // Check if GitHub configuration is complete
+    if (!config.GITHUB_OWNER || !config.GITHUB_BACKUP_REPO || !config.GITHUB_BACKUP_BRANCH) {
+      const error = 'GitHub configuration incomplete. Please set GITHUB_OWNER, GITHUB_BACKUP_REPO, and GITHUB_BACKUP_BRANCH.';
+      console.error(error);
+      results.error = error;
+      results.subscribers.error = error;
+      results.contacts.error = error;
+
+      // Store error state
+      await env.KV.put(`${config.KEEP_PREFIX_MAINTENANCE}backup`, JSON.stringify({
+        results: results,
+        timestamp: results.timestamp,
+        error: error
+      }));
+
+      return results;
+    }
+
     // Backup subscribers with rate limit handling
     console.log('Backing up subscribers...');
     const subscriberResult = await backupSubscribers(env, config);
@@ -34,14 +70,25 @@ export async function performBackup(env, config) {
     // Store backup metadata
     await env.KV.put(`${config.KEEP_PREFIX_MAINTENANCE}backup`, JSON.stringify({
       results: results,
-      timestamp: new Date().toISOString()
+      timestamp: results.timestamp
     }));
 
     console.log('Backup completed successfully');
+    console.log(`Subscribers backed up: ${results.subscribers.count}, Success: ${results.subscribers.success}`);
+    console.log(`Contacts backed up: ${results.contacts.count}, Success: ${results.contacts.success}`);
+
     return results;
   } catch (error) {
     console.error('Error during backup:', error);
     results.error = error.message;
+
+    // Store error state
+    await env.KV.put(`${config.KEEP_PREFIX_MAINTENANCE}backup`, JSON.stringify({
+      results: results,
+      timestamp: results.timestamp,
+      error: error.message
+    }));
+
     return results;
   }
 }
@@ -117,20 +164,38 @@ async function backupSubscribers(env, config) {
 
     // Save to GitHub using config variable
     const fileName = config.GITHUB_SUBSCRIBER_BACKUP_PATH;
-    const result = await createOrUpdateFile(config, {
-      repo: config.GITHUB_BACKUP_REPO,
-      branch: config.GITHUB_BACKUP_BRANCH,
-      path: fileName,
-      content: csvContent,
-      message: `Subscriber backup - ${new Date().toLocaleString()} - ${subscribers.length} records`
-    });
+    console.log(`Saving ${subscribers.length} subscribers to GitHub: ${config.GITHUB_OWNER}/${config.GITHUB_BACKUP_REPO}/${fileName}`);
 
-    return {
-      success: result.success,
-      count: subscribers.length,
-      fileName: fileName,
-      error: result.success ? null : 'Failed to save to GitHub'
-    };
+    try {
+      const result = await createOrUpdateFile(config, {
+        repo: config.GITHUB_BACKUP_REPO,
+        branch: config.GITHUB_BACKUP_BRANCH,
+        path: fileName,
+        content: csvContent,
+        message: `Subscriber backup - ${new Date().toLocaleString()} - ${subscribers.length} records`
+      });
+
+      if (result.success) {
+        console.log(`Successfully saved subscriber backup to GitHub: ${result.url || fileName}`);
+      } else {
+        console.error('Failed to save subscriber backup to GitHub');
+      }
+
+      return {
+        success: result.success,
+        count: subscribers.length,
+        fileName: fileName,
+        error: result.success ? null : result.error || 'Failed to save to GitHub'
+      };
+    } catch (error) {
+      console.error('Error saving subscriber backup to GitHub:', error);
+      return {
+        success: false,
+        count: subscribers.length,
+        fileName: fileName,
+        error: error.message || 'Failed to save to GitHub'
+      };
+    }
   } catch (error) {
     console.error('Error backing up subscribers:', error);
     return {
@@ -203,20 +268,38 @@ async function backupContacts(env, config) {
 
     // Save to GitHub using config variable
     const fileName = config.GITHUB_CONTACT_BACKUP_PATH;
-    const result = await createOrUpdateFile(config, {
-      repo: config.GITHUB_BACKUP_REPO,
-      branch: config.GITHUB_BACKUP_BRANCH,
-      path: fileName,
-      content: csvContent,
-      message: `Contact backup - ${new Date().toLocaleString()} - ${contacts.length} records`
-    });
+    console.log(`Saving ${contacts.length} contacts to GitHub: ${config.GITHUB_OWNER}/${config.GITHUB_BACKUP_REPO}/${fileName}`);
 
-    return {
-      success: result.success,
-      count: contacts.length,
-      fileName: fileName,
-      error: result.success ? null : 'Failed to save to GitHub'
-    };
+    try {
+      const result = await createOrUpdateFile(config, {
+        repo: config.GITHUB_BACKUP_REPO,
+        branch: config.GITHUB_BACKUP_BRANCH,
+        path: fileName,
+        content: csvContent,
+        message: `Contact backup - ${new Date().toLocaleString()} - ${contacts.length} records`
+      });
+
+      if (result.success) {
+        console.log(`Successfully saved contact backup to GitHub: ${result.url || fileName}`);
+      } else {
+        console.error('Failed to save contact backup to GitHub');
+      }
+
+      return {
+        success: result.success,
+        count: contacts.length,
+        fileName: fileName,
+        error: result.success ? null : result.error || 'Failed to save to GitHub'
+      };
+    } catch (error) {
+      console.error('Error saving contact backup to GitHub:', error);
+      return {
+        success: false,
+        count: contacts.length,
+        fileName: fileName,
+        error: error.message || 'Failed to save to GitHub'
+      };
+    }
   } catch (error) {
     console.error('Error backing up contacts:', error);
     return {
@@ -298,7 +381,8 @@ function delay(ms) {
  */
 export async function getBackupStatus(env, config) {
   try {
-    const lastBackup = await env.KV.get('maintenance:last-backup');
+    // Use the configured prefix for the key
+    const lastBackup = await env.KV.get(`${config.KEEP_PREFIX_MAINTENANCE}backup`);
 
     if (!lastBackup) {
       return {
@@ -312,7 +396,8 @@ export async function getBackupStatus(env, config) {
     return {
       lastRun: data.timestamp,
       subscribers: data.results?.subscribers || { count: 0 },
-      contacts: data.results?.contacts || { count: 0 }
+      contacts: data.results?.contacts || { count: 0 },
+      error: data.error || null
     };
   } catch (error) {
     console.error('Error getting backup status:', error);
