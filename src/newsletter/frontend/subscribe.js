@@ -98,7 +98,7 @@ async function processSubscription(request, env, config) {
     }
 
     return jsonResponse({
-      message: 'Successfully subscribed! You will receive our next newsletter.',
+      message: 'Successfully subscribed! You will receive the next newsletter update.',
       email: email
     }, 200, config);
 
@@ -301,7 +301,7 @@ function getSubscribeFormHTML(config) {
         <div id="notice" class="notice"></div>
 
         <div class="privacy">
-            By subscribing, you agree to receive our newsletter emails.
+            By subscribing, you agree to receive newsletter emails.
             You can unsubscribe at any time.
         </div>
     </div>

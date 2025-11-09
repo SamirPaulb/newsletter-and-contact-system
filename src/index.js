@@ -443,13 +443,13 @@ function getHomePage(config) {
             <a href="${config.SUBSCRIBE_WEB_PATH}" class="link-card">
                 <div class="icon">✉️</div>
                 <h3>Subscribe</h3>
-                <p>Join our newsletter</p>
+                <p>Join the newsletter</p>
             </a>
 
             <a href="${config.UNSUBSCRIBE_WEB_PATH}" class="link-card">
                 <div class="icon">👋</div>
                 <h3>Unsubscribe</h3>
-                <p>Leave our list</p>
+                <p>Leave the list</p>
             </a>
 
             <a href="${config.CONTACT_WEB_PATH}" class="link-card">

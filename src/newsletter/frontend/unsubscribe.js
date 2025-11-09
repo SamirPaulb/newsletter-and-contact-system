@@ -92,13 +92,13 @@ async function processUnsubscription(request, env, config) {
 
     if (!result.success) {
       return jsonResponse({
-        error: result.message || 'Email not found in our list',
+        error: result.message || 'Email not found in the subscriber list',
         email: email
       }, 400, config);
     }
 
     return jsonResponse({
-      message: 'Successfully unsubscribed. You will no longer receive our newsletters.',
+      message: 'Successfully unsubscribed. You will no longer receive newsletter updates.',
       email: email
     }, 200, config);
 
@@ -288,7 +288,7 @@ function getUnsubscribeFormHTML(config) {
         <p class="subtitle">We're sorry to see you go</p>
 
         <div class="warning">
-            ⚠️ After unsubscribing, you will no longer receive our newsletter updates.
+            ⚠️ After unsubscribing, you will no longer receive newsletter updates.
             You can always subscribe again later if you change your mind.
         </div>
 

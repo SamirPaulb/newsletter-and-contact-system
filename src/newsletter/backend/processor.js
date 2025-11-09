@@ -1,10 +1,12 @@
 /**
- * Newsletter Backend Processor - RSS Discovery and Queue Management
+ * Newsletter Backend Processor - Universal Feed Discovery and Queue Management
+ * Supports RSS 2.0, RSS 1.0, Atom, RDF, and JSON Feed formats
  */
 
 import { getAllSubscribers, getQueuesByStatus } from '../../utils/kv.js';
 import { EmailFactory } from '../../email/emailFactory.js';
 import { withRetry, resilientFetch, DeadLetterQueue } from '../../utils/retry.js';
+import { parseFeed, detectFeedType, isValidFeedUrl } from '../../utils/feedParser.js';
 
 /**
  * Main daily processing function
@@ -63,12 +65,19 @@ export async function dailyRun(env, config) {
 }
 
 /**
- * Discover new posts from RSS feed and create queue
+ * Discover new posts from feed and create queue
+ * Supports multiple feed formats: RSS 2.0, RSS 1.0, Atom, RDF, JSON Feed
  */
 async function discoverFromRssAndQueue(env, config) {
   try {
     if (!config.RSS_FEED_URL) {
-      console.log('No RSS feed URL configured');
+      console.log('No feed URL configured');
+      return;
+    }
+
+    // Validate feed URL
+    if (!isValidFeedUrl(config.RSS_FEED_URL)) {
+      console.error('Invalid feed URL:', config.RSS_FEED_URL);
       return;
     }
 
@@ -81,9 +90,12 @@ async function discoverFromRssAndQueue(env, config) {
 
     console.log(`Found ${subscribers.length} subscriber(s)`);
 
-    // Fetch RSS feed with retry logic
+    // Fetch feed with retry logic
     const fetchResult = await resilientFetch(config.RSS_FEED_URL, {
-      headers: { 'User-Agent': config.USER_AGENT },
+      headers: {
+        'User-Agent': config.USER_AGENT,
+        'Accept': 'application/rss+xml, application/atom+xml, application/xml, text/xml, application/json, */*'
+      },
       timeout: config.FETCH_TIMEOUT_MS
     }, {
       retryConfig: {
@@ -94,9 +106,9 @@ async function discoverFromRssAndQueue(env, config) {
     });
 
     if (!fetchResult.success) {
-      console.error(`Failed to fetch RSS feed after retries: ${fetchResult.error.message}`);
+      console.error(`Failed to fetch feed after retries: ${fetchResult.error.message}`);
       // Store error for monitoring
-      await env.KV.put('error:rss-fetch:last', JSON.stringify({
+      await env.KV.put('error:feed-fetch:last', JSON.stringify({
         url: config.RSS_FEED_URL,
         error: fetchResult.error.message,
         attempts: fetchResult.attempts,
@@ -108,21 +120,29 @@ async function discoverFromRssAndQueue(env, config) {
     }
 
     const response = fetchResult.result;
-    const xml = await response.text();
-    const items = extractRssItems(xml);
+    const contentType = response.headers.get('content-type') || '';
+    const feedContent = await response.text();
+
+    // Detect feed type for logging
+    const feedType = detectFeedType(feedContent);
+    console.log(`Detected feed type: ${feedType}`);
+
+    // Parse feed using universal parser
+    const items = parseFeed(feedContent, contentType);
 
     if (!items.length) {
-      console.log('No items found in RSS feed');
+      console.log('No items found in feed');
       return;
     }
 
-    console.log(`Found ${items.length} items in RSS feed`);
+    console.log(`Found ${items.length} items in feed (type: ${feedType})`);
 
     let created = 0;
     for (const item of items) {
       if (created >= config.MAX_POSTS_PER_RUN) break;
 
-      const normUrl = normalizeUrl(item.url);
+      // Item.url is already normalized by the parser
+      const normUrl = item.url;
       const postId = postIdFromNormalizedUrl(normUrl) || item.guid || item.title || normUrl;
 
       if (!postId) continue;
@@ -134,7 +154,7 @@ async function discoverFromRssAndQueue(env, config) {
         continue;
       }
 
-      // Create queue entry
+      // Create queue entry with enriched data
       const queueKey = `${config.PREFIX_EMAIL_QUEUE}${postId}`;
       const queueData = {
         post: {
@@ -142,13 +162,17 @@ async function discoverFromRssAndQueue(env, config) {
           title: item.title || postId,
           description: item.description || '',
           lastmod: item.pubDate || '',
-          slug: postId
+          slug: postId,
+          author: item.author || '',
+          categories: item.categories || [],
+          enclosure: item.enclosure || ''
         },
         subscribers: subscribers,
         sentTo: [],
         createdAt: new Date().toISOString(),
         status: 'pending',
-        nextSendAt: ''
+        nextSendAt: '',
+        feedType: feedType // Store feed type for debugging
       };
 
       await env.KV.put(queueKey, JSON.stringify(queueData));
@@ -356,74 +380,6 @@ async function alreadySent(env, config, postId, normUrl) {
   return !!(byId || byUrl);
 }
 
-/**
- * Extract RSS items from XML
- */
-function extractRssItems(xml) {
-  const items = [];
-
-  // Parse RSS 2.0 items
-  const rssItemRegex = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
-  let match;
-
-  while ((match = rssItemRegex.exec(xml)) !== null) {
-    const block = match[1];
-    const title = (block.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.trim() || '';
-    const link = (block.match(/<link\b[^>]*>([\s\S]*?)<\/link>/i) || [])[1]?.trim() || '';
-    const guid = (block.match(/<guid\b[^>]*>([\s\S]*?)<\/guid>/i) || [])[1]?.trim() || '';
-    const pubDate = (block.match(/<pubDate\b[^>]*>([\s\S]*?)<\/pubDate>/i) || [])[1]?.trim() || '';
-    const description = (block.match(/<description\b[^>]*>([\s\S]*?)<\/description>/i) || [])[1]?.trim() || '';
-
-    if (link) {
-      items.push({
-        url: link,
-        title: cleanCDATA(title),
-        guid: cleanCDATA(guid),
-        pubDate: pubDate,
-        description: cleanCDATA(description)
-      });
-    }
-  }
-
-  // Parse Atom entries
-  const atomEntryRegex = /<entry\b[^>]*>([\s\S]*?)<\/entry>/gi;
-
-  while ((match = atomEntryRegex.exec(xml)) !== null) {
-    const block = match[1];
-    const title = (block.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.trim() || '';
-    const linkHref = (block.match(/<link\b[^>]*href=["']([^"']+)["'][^>]*\/?>/i) || [])[1]?.trim() || '';
-    const id = (block.match(/<id\b[^>]*>([\s\S]*?)<\/id>/i) || [])[1]?.trim() || '';
-    const updated = (block.match(/<updated\b[^>]*>([\s\S]*?)<\/updated>/i) || [])[1]?.trim() || '';
-    const summary = (block.match(/<summary\b[^>]*>([\s\S]*?)<\/summary>/i) || [])[1]?.trim() || '';
-
-    if (linkHref) {
-      items.push({
-        url: linkHref,
-        title: cleanCDATA(title),
-        guid: id,
-        pubDate: updated,
-        description: cleanCDATA(summary)
-      });
-    }
-  }
-
-  return items;
-}
-
-/**
- * Clean CDATA sections
- */
-function cleanCDATA(text) {
-  if (!text) return '';
-
-  // Remove CDATA markers first
-  let cleaned = text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
-
-  // Remove HTML tags with non-greedy pattern to avoid polynomial regex
-  cleaned = cleaned.replace(/<[^>]+>/g, '');
-
-  return cleaned.trim();
-}
 
 /**
  * Normalize URL

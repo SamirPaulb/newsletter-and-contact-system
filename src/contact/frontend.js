@@ -349,6 +349,7 @@ function getContactFormHTML(config) {
                     type="text"
                     id="name"
                     name="name"
+                    placeholder="John Doe"
                     required
                     autocomplete="name"
                 >
@@ -360,6 +361,7 @@ function getContactFormHTML(config) {
                     type="email"
                     id="email"
                     name="email"
+                    placeholder="john.doe@example.com"
                     required
                     autocomplete="email"
                 >
@@ -371,6 +373,7 @@ function getContactFormHTML(config) {
                     type="tel"
                     id="phone"
                     name="phone"
+                    placeholder="+1 (555) 123-4567"
                     autocomplete="tel"
                 >
             </div>
@@ -388,7 +391,7 @@ function getContactFormHTML(config) {
             <div class="checkbox-group">
                 <input type="checkbox" id="subscribe" name="subscribe" checked>
                 <label for="subscribe" class="checkbox-label">
-                    Subscribe to our newsletter for updates
+                    Subscribe to the newsletter for updates
                 </label>
             </div>
 

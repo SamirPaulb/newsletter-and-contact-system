@@ -150,11 +150,20 @@ export class EmailFactory {
             display: inline-block;
             padding: 12px 30px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            color: white !important;
             text-decoration: none;
             border-radius: 5px;
             font-weight: 500;
             margin: 20px 0;
+            border: none;
+            cursor: pointer;
+        }
+        .button:hover {
+            opacity: 0.9;
+        }
+        .button-container {
+            text-align: center;
+            margin: 25px 0;
         }
         .footer {
             background-color: #f8f9fa;
@@ -180,23 +189,26 @@ export class EmailFactory {
             <h1>📬 ${config.EMAIL_FROM_NAME || 'Newsletter'}</h1>
         </div>
         <div class="content">
-            <h2>${post.title}</h2>
-            ${post.description ? `<p>${post.description}</p>` : ''}
-            <p>We've published a new article that we think you'll find interesting.</p>
-            <center>
-                <a href="${post.url}" class="button">Read Now →</a>
-            </center>
+            <h2>New Post: ${post.title}</h2>
+            <p>Thank you for subscribing and reading!</p>
+            <p>A new blog post has been published. Click the button below to read it.</p>
+            <div class="button-container">
+                <a href="${post.url}" class="button" style="color: white !important; text-decoration: none;">Read Now →</a>
+            </div>
             <p style="font-size: 14px; color: #999; margin-top: 20px;">
                 Article link: <a href="${post.url}" class="post-link">${post.url}</a>
             </p>
         </div>
         <div class="footer">
-            <p>You're receiving this because you subscribed to our newsletter.</p>
+            <p>You're receiving this because you subscribed to this newsletter.</p>
             <p>
                 <a href="${config.UNSUBSCRIBE_URL}">Unsubscribe</a> |
-                <a href="${config.SITE_URL}">Visit our website</a>
+                <a href="${config.SITE_URL}">Visit the website</a>
             </p>
-            <p style="margin-top: 15px; color: #999;">
+            <p style="margin-top: 15px; color: #999; font-style: italic;">
+                This is an automated email. Please do not reply to this email address.
+            </p>
+            <p style="margin-top: 10px; color: #999;">
                 © ${new Date().getFullYear()} ${config.SITE_OWNER}. All rights reserved.
             </p>
         </div>
@@ -220,10 +232,10 @@ Read the full article: ${post.url}
 
 -------------------------------------
 
-You're receiving this because you subscribed to our newsletter.
+You're receiving this because you subscribed to this newsletter.
 
 Unsubscribe: ${config.UNSUBSCRIBE_URL}
-Visit our website: ${config.SITE_URL}
+Visit the website: ${config.SITE_URL}
 
 © ${new Date().getFullYear()} ${config.SITE_OWNER}. All rights reserved.`;
     }
@@ -317,11 +329,11 @@ Submitted At: ${new Date(contactData.timestamp || contactData.submittedAt).toLoc
 <body>
     <div class="container">
         <div class="header">
-            <h2>Thank You for Contacting Us!</h2>
+            <h2>Thank You for Your Message!</h2>
         </div>
         <div class="content">
             <p>Hi ${contactData.name},</p>
-            <p>We've received your message and will get back to you as soon as possible.</p>
+            <p>Your message has been received and will be responded to as soon as possible.</p>
             <p>Here's a copy of your submission:</p>
             <blockquote style="background: #f5f5f5; padding: 15px; border-left: 3px solid #667eea; margin: 20px 0;">
                 ${contactData.message.replace(/\n/g, '<br>')}
@@ -337,12 +349,12 @@ Submitted At: ${new Date(contactData.timestamp || contactData.submittedAt).toLoc
      * Create contact confirmation text
      */
     static createContactConfirmationText(contactData, config) {
-        return `Thank You for Contacting Us!
+        return `Thank You for Your Message!
 ============================
 
 Hi ${contactData.name},
 
-We've received your message and will get back to you as soon as possible.
+Your message has been received and will be responded to as soon as possible.
 
 Here's a copy of your submission:
 

@@ -4,14 +4,16 @@ A fully modular, serverless newsletter and contact form management system built 
 
 ## 🚀 Features
 
-- **Multiple Email Providers**: Support for Gmail SMTP (via worker-mailer), MailerLite API, or Cloudflare Email Routing
-- **Newsletter Management**: Automated RSS feed monitoring and batch email delivery
+- **Multiple Email Providers**: Support for Gmail SMTP (via worker-mailer), MailerLite API, and Cloudflare Email Routing
+- **Universal Feed Parser**: Supports RSS 2.0, RSS 1.0, Atom, RDF, and JSON Feed formats
+- **Newsletter Management**: Automated feed monitoring and batch email delivery
 - **Bot Protection**: Cloudflare Turnstile integration for all forms
 - **KV Storage**: Efficient data persistence with Cloudflare KV
 - **Automated Backups**: Weekly CSV backups to GitHub
 - **Contact Forms**: Integrated contact system with auto-subscribe option
 - **Rate Limiting**: Built-in protection against abuse
 - **Self-Maintenance**: Automatic weekly cleanup of old data
+- **Error Recovery**: Retry logic with exponential backoff and dead letter queue
 
 ## 📁 Architecture
 
@@ -30,14 +32,22 @@ src/
 │   └── frontend.js            # Contact form & processing
 ├── email/
 │   ├── gmailProvider.js       # Gmail SMTP via worker-mailer
+│   ├── mailerLiteProvider.js  # MailerLite API integration
 │   ├── workerEmailProvider.js # Cloudflare Email routing
 │   └── emailFactory.js        # Email provider factory
 ├── maintenance/
-│   └── cleanup.js             # Cleanup & backup operations
+│   ├── cleanup.js             # Cleanup operations
+│   └── backup.js              # GitHub backup functionality
+├── middleware/
+│   └── protection.js          # Rate limiting & bot protection
+├── pages/
+│   └── status.js              # Status page generator
 └── utils/
     ├── kv.js                  # KV storage utilities
     ├── github.js              # GitHub API utilities
-    └── validation.js          # Input validation
+    ├── validation.js          # Input validation
+    ├── retry.js               # Retry logic & dead letter queue
+    └── feedParser.js          # Universal feed parser
 ```
 
 ## 🛠️ Setup
@@ -67,8 +77,8 @@ Edit `wrangler.toml` to set your non-secret variables:
 
 ```toml
 [vars]
-EMAIL_PROVIDER = "gmail"  # or "worker-email"
-RSS_FEED_URL = "https://your-site.com/feed.xml"
+EMAIL_PROVIDER = "gmail"  # Options: "gmail", "mailerlite", "worker-email"
+RSS_FEED_URL = "https://your-site.com/feed.xml"  # Supports RSS, Atom, JSON Feed
 GITHUB_OWNER = "your-username"
 GITHUB_BACKUP_REPO = "data"
 # ... see wrangler.toml for all options
@@ -145,7 +155,24 @@ Uses `worker-mailer` library to send emails via Gmail SMTP.
 - 500 recipients/day (free Gmail)
 - 2000 recipients/day (Google Workspace)
 
-### Worker Email (Optional)
+### MailerLite (Recommended for Scale)
+
+Uses MailerLite API for professional email delivery.
+
+**Requirements:**
+- MailerLite account
+- API token from MailerLite dashboard
+- Verified sending domain
+
+**Advantages:**
+- 12,000 emails/month free tier
+- Professional email delivery
+- Built-in analytics
+- No SMTP limitations
+
+To use, set `EMAIL_PROVIDER = "mailerlite"` in `wrangler.toml`.
+
+### Worker Email (Alternative)
 
 Uses Cloudflare Email Routing.
 
@@ -153,7 +180,23 @@ Uses Cloudflare Email Routing.
 - Custom domain with Cloudflare
 - Email routing configured
 
-To switch providers, set `EMAIL_PROVIDER = "worker-email"` in `wrangler.toml`.
+To use, set `EMAIL_PROVIDER = "worker-email"` in `wrangler.toml`.
+
+## 📰 Supported Feed Formats
+
+The universal feed parser automatically detects and parses:
+
+- **RSS 2.0** - Most common RSS format
+- **RSS 1.0/RDF** - Older RSS with RDF namespaces
+- **Atom** - Modern XML feed format
+- **JSON Feed** - JSON-based feed format
+
+The parser handles:
+- CDATA sections
+- HTML entities
+- Multiple date formats
+- Missing fields with fallbacks
+- Namespace variations (dc:, content:, etc.)
 
 ## ⏰ Cron Schedule
 
