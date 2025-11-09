@@ -271,7 +271,7 @@ function getSubscribeFormHTML(config) {
 </head>
 <body>
     <div class="container">
-        <h2>📬 Subscribe to Our Newsletter</h2>
+        <h2>📬 Get New Posts in Your Inbox</h2>
         <p class="subtitle">Get the latest updates delivered directly to your inbox</p>
 
         <form id="subscribeForm">

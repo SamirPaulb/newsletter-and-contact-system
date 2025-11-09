@@ -339,7 +339,7 @@ function getContactFormHTML(config) {
 </head>
 <body>
     <div class="container">
-        <h2>📧 Contact Us</h2>
+        <h2>📧 Drop Me a Message</h2>
         <p class="subtitle">We'd love to hear from you! Send us a message.</p>
 
         <form id="contactForm">
