@@ -4,7 +4,7 @@
  * Uses KV to store progress and assembled backup
  */
 
-import { saveToGitHub } from '../utils/github.js';
+import { createOrUpdateFile } from '../utils/github.js';
 
 const CHUNK_SIZE = 10; // Process only 10 records at a time to stay under CPU limit
 const MAX_EXECUTION_TIME = 8; // 8ms max to be safe (10ms limit)
@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS contact (
 
       // Upload to GitHub
       console.log('Uploading SQL backup to GitHub...');
-      const githubResult = await saveToGitHub(
+      const githubResult = await createOrUpdateFile(
         {
           GITHUB_TOKEN: config.GITHUB_TOKEN,
           GITHUB_OWNER: config.GITHUB_OWNER,

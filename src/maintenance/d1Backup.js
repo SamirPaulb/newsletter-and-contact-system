@@ -4,7 +4,7 @@
  * Runs weekly on Wednesday at noon UTC
  */
 
-import { saveToGitHub } from '../utils/github.js';
+import { createOrUpdateFile } from '../utils/github.js';
 
 /**
  * Export D1 database to SQL format and upload to GitHub
@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS contact (
 
     // Upload to GitHub
     console.log('Uploading SQL backup to GitHub...');
-    const githubResult = await saveToGitHub(
+    const githubResult = await createOrUpdateFile(
       {
         GITHUB_TOKEN: config.GITHUB_TOKEN,
         GITHUB_OWNER: config.GITHUB_OWNER,
