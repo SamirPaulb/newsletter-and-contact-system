@@ -4,11 +4,13 @@
 
 import { validateEmail, getClientIp } from '../../utils/validation.js';
 import { addSubscriber, checkRateLimit, verifyTurnstile } from '../../utils/kv.js';
+import { checkNativeFormRateLimit } from '../../utils/nativeRateLimit.js';
+import { replicateSubscriberToD1 } from '../../utils/d1Replication.js';
 
 /**
  * Handle subscribe requests
  */
-export async function handleSubscribe(request, env, config) {
+export async function handleSubscribe(request, env, config, ctx) {
   const url = new URL(request.url);
 
   // Handle GET request - return HTML form
@@ -24,7 +26,7 @@ export async function handleSubscribe(request, env, config) {
 
   // Handle POST request - process subscription
   if (request.method === 'POST' && url.pathname === config.SUBSCRIBE_API_PATH) {
-    return await processSubscription(request, env, config);
+    return await processSubscription(request, env, config, ctx);
   }
 
   // Handle OPTIONS request - CORS preflight
@@ -40,7 +42,7 @@ export async function handleSubscribe(request, env, config) {
 /**
  * Process subscription request
  */
-async function processSubscription(request, env, config) {
+async function processSubscription(request, env, config, ctx) {
   try {
     // Parse request
     const contentType = request.headers.get('content-type') || '';
@@ -63,7 +65,16 @@ async function processSubscription(request, env, config) {
 
     const email = emailValidation.email;
 
-    // Check rate limit
+    // FIRST: Check native rate limit for forms
+    const nativeCheck = await checkNativeFormRateLimit(request, env, 'subscribe');
+    if (!nativeCheck.allowed) {
+      return jsonResponse({
+        error: nativeCheck.reason || 'Too many subscription attempts. Please wait a minute and try again.',
+        retryAfter: 60
+      }, 429, config);
+    }
+
+    // SECOND: Check KV-based rate limit (more restrictive, 24-hour window)
     const clientIp = getClientIp(request);
     const rateLimit = await checkRateLimit(env, config, clientIp);
 
@@ -92,14 +103,16 @@ async function processSubscription(request, env, config) {
 
     if (!result.success) {
       return jsonResponse({
-        error: result.message || 'Already subscribed',
-        email: email
+        error: result.message || 'Already subscribed'
       }, 400, config);
     }
 
+    // Replicate to D1 (async, non-blocking)
+    // This runs in background and won't affect response time
+    replicateSubscriberToD1(env, ctx, email, clientIp, new Date().toISOString());
+
     return jsonResponse({
-      message: 'Successfully subscribed! You will receive the next newsletter update.',
-      email: email
+      message: 'Successfully subscribed! You will receive the next newsletter update.'
     }, 200, config);
 
   } catch (error) {

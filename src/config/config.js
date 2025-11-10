@@ -154,6 +154,10 @@ export function buildConfig(env) {
   if (env && env.PREFIX_BOT_DETECT) PREFIX_BOT_DETECT = String(env.PREFIX_BOT_DETECT);
   PREFIX_BOT_DETECT = withColon(PREFIX_BOT_DETECT);
 
+  let PREFIX_BACKUP_CHUNK = 'backup-chunk';
+  if (env && env.PREFIX_BACKUP_CHUNK) PREFIX_BACKUP_CHUNK = String(env.PREFIX_BACKUP_CHUNK);
+  PREFIX_BACKUP_CHUNK = withColon(PREFIX_BACKUP_CHUNK);
+
   // Cleanup Configuration - Additional prefixes to keep
   let KEEP_PREFIX_MAINTENANCE = 'maintenance:last-';
   if (env && env.KEEP_PREFIX_MAINTENANCE) KEEP_PREFIX_MAINTENANCE = String(env.KEEP_PREFIX_MAINTENANCE);
@@ -174,12 +178,23 @@ export function buildConfig(env) {
   let TURNSTILE_SECRET_KEY = '';
   if (env && env.TURNSTILE_SECRET_KEY) TURNSTILE_SECRET_KEY = String(env.TURNSTILE_SECRET_KEY);
 
+  // Admin authentication token - Required for admin endpoints
+  let ADMIN_TOKEN = '';
+  if (env && env.ADMIN_TOKEN) ADMIN_TOKEN = String(env.ADMIN_TOKEN);
+
   // Rate Limiting and Protection
   let RATE_LIMIT_MAX = 5;
   if (env && env.RATE_LIMIT_MAX) RATE_LIMIT_MAX = parseInt(String(env.RATE_LIMIT_MAX), 10) || 5;
 
   let RATE_LIMIT_WINDOW_HOURS = 24;
   if (env && env.RATE_LIMIT_WINDOW_HOURS) RATE_LIMIT_WINDOW_HOURS = parseInt(String(env.RATE_LIMIT_WINDOW_HOURS), 10) || 24;
+
+  // Admin API rate limiting (separate from form rate limiting)
+  let ADMIN_API_RATE_LIMIT_MAX = 5; // Max admin API calls per IP per day
+  if (env && env.ADMIN_API_RATE_LIMIT_MAX) ADMIN_API_RATE_LIMIT_MAX = parseInt(String(env.ADMIN_API_RATE_LIMIT_MAX), 10) || 5;
+
+  let ADMIN_API_RATE_LIMIT_WINDOW_HOURS = 24; // 24 hour window for admin API
+  if (env && env.ADMIN_API_RATE_LIMIT_WINDOW_HOURS) ADMIN_API_RATE_LIMIT_WINDOW_HOURS = parseInt(String(env.ADMIN_API_RATE_LIMIT_WINDOW_HOURS), 10) || 24;
 
   let GLOBAL_RATE_LIMIT_PER_MINUTE = 30;
   if (env && env.GLOBAL_RATE_LIMIT_PER_MINUTE) GLOBAL_RATE_LIMIT_PER_MINUTE = parseInt(String(env.GLOBAL_RATE_LIMIT_PER_MINUTE), 10) || 30;
@@ -218,6 +233,19 @@ export function buildConfig(env) {
   let TTL_FEED_ERROR = 86400; // 24 hours
   if (env && env.TTL_FEED_ERROR) TTL_FEED_ERROR = parseInt(String(env.TTL_FEED_ERROR), 10) || 86400;
 
+  let TTL_BACKUP_CHUNK = 604800; // 7 days
+  if (env && env.TTL_BACKUP_CHUNK) TTL_BACKUP_CHUNK = parseInt(String(env.TTL_BACKUP_CHUNK), 10) || 604800;
+
+  // Backup chunk processing configuration
+  let BACKUP_CHUNK_SIZE = 20; // Records to process at a time
+  if (env && env.BACKUP_CHUNK_SIZE) BACKUP_CHUNK_SIZE = parseInt(String(env.BACKUP_CHUNK_SIZE), 10) || 20;
+
+  let BACKUP_CHUNK_LIST_LIMIT = 1000; // Max chunks to list when merging
+  if (env && env.BACKUP_CHUNK_LIST_LIMIT) BACKUP_CHUNK_LIST_LIMIT = parseInt(String(env.BACKUP_CHUNK_LIST_LIMIT), 10) || 1000;
+
+  let CLEANUP_BATCH_SIZE = 100; // Keys to delete per batch in cleanup
+  if (env && env.CLEANUP_BATCH_SIZE) CLEANUP_BATCH_SIZE = parseInt(String(env.CLEANUP_BATCH_SIZE), 10) || 100;
+
   // URL Paths
   let SUBSCRIBE_WEB_PATH = '/subscribe';
   if (env && env.SUBSCRIBE_WEB_PATH) SUBSCRIBE_WEB_PATH = String(env.SUBSCRIBE_WEB_PATH);
@@ -246,6 +274,46 @@ export function buildConfig(env) {
 
   let SITE_OWNER = 'Samir P.';
   if (env && env.SITE_OWNER) SITE_OWNER = String(env.SITE_OWNER);
+
+  // GitHub Repo URL
+  let GITHUB_REPO_URL = 'https://github.com/SamirPaulb/newsletter-and-contact-system';
+  if (env && env.GITHUB_REPO_URL) GITHUB_REPO_URL = String(env.GITHUB_REPO_URL);
+
+  // Turnstile URLs
+  let TURNSTILE_API_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+  if (env && env.TURNSTILE_API_URL) TURNSTILE_API_URL = String(env.TURNSTILE_API_URL);
+
+  let TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+  if (env && env.TURNSTILE_VERIFY_URL) TURNSTILE_VERIFY_URL = String(env.TURNSTILE_VERIFY_URL);
+
+  // Retry Configuration
+  let RETRY_INITIAL_DELAY = 1000;
+  if (env && env.RETRY_INITIAL_DELAY) RETRY_INITIAL_DELAY = parseInt(String(env.RETRY_INITIAL_DELAY), 10) || 1000;
+
+  let RETRY_MAX_DELAY = 30000;
+  if (env && env.RETRY_MAX_DELAY) RETRY_MAX_DELAY = parseInt(String(env.RETRY_MAX_DELAY), 10) || 30000;
+
+  let RETRY_BACKOFF_MULTIPLIER = 2;
+  if (env && env.RETRY_BACKOFF_MULTIPLIER) RETRY_BACKOFF_MULTIPLIER = parseInt(String(env.RETRY_BACKOFF_MULTIPLIER), 10) || 2;
+
+  let RETRY_MAX_ATTEMPTS = 3;
+  if (env && env.RETRY_MAX_ATTEMPTS) RETRY_MAX_ATTEMPTS = parseInt(String(env.RETRY_MAX_ATTEMPTS), 10) || 3;
+
+  let CIRCUIT_BREAKER_RESET_TIMEOUT = 60000;
+  if (env && env.CIRCUIT_BREAKER_RESET_TIMEOUT) CIRCUIT_BREAKER_RESET_TIMEOUT = parseInt(String(env.CIRCUIT_BREAKER_RESET_TIMEOUT), 10) || 60000;
+
+  // Timeout Configuration
+  let GMAIL_TIMEOUT_MS = 30000;
+  if (env && env.GMAIL_TIMEOUT_MS) GMAIL_TIMEOUT_MS = parseInt(String(env.GMAIL_TIMEOUT_MS), 10) || 30000;
+
+  let CACHE_CONTROL_MAX_AGE = 3600;
+  if (env && env.CACHE_CONTROL_MAX_AGE) CACHE_CONTROL_MAX_AGE = parseInt(String(env.CACHE_CONTROL_MAX_AGE), 10) || 3600;
+
+  let CORS_MAX_AGE = 86400;
+  if (env && env.CORS_MAX_AGE) CORS_MAX_AGE = parseInt(String(env.CORS_MAX_AGE), 10) || 86400;
+
+  let COOKIE_TTL = 3600;
+  if (env && env.COOKIE_TTL) COOKIE_TTL = parseInt(String(env.COOKIE_TTL), 10) || 3600;
 
   return {
     // Email Provider
@@ -309,6 +377,7 @@ export function buildConfig(env) {
     PREFIX_CAPTCHA,
     PREFIX_BOT,
     PREFIX_BOT_DETECT,
+    PREFIX_BACKUP_CHUNK,
 
     // Cleanup Keep Prefixes
     KEEP_PREFIX_MAINTENANCE,
@@ -320,9 +389,14 @@ export function buildConfig(env) {
     TURNSTILE_SITE_KEY,
     TURNSTILE_SECRET_KEY,
 
+    // Admin authentication
+    ADMIN_TOKEN,
+
     // Rate Limiting and Protection
     RATE_LIMIT_MAX,
     RATE_LIMIT_WINDOW_HOURS,
+    ADMIN_API_RATE_LIMIT_MAX,
+    ADMIN_API_RATE_LIMIT_WINDOW_HOURS,
     GLOBAL_RATE_LIMIT_PER_MINUTE,
     GLOBAL_RATE_LIMIT_WINDOW_MS,
     ABUSE_THRESHOLD,
@@ -337,6 +411,10 @@ export function buildConfig(env) {
     TTL_DAILY_STATS,
     TTL_ERROR_LOGS,
     TTL_FEED_ERROR,
+    TTL_BACKUP_CHUNK,
+    BACKUP_CHUNK_SIZE,
+    BACKUP_CHUNK_LIST_LIMIT,
+    CLEANUP_BATCH_SIZE,
 
     // URL Paths
     SUBSCRIBE_WEB_PATH,
@@ -349,7 +427,25 @@ export function buildConfig(env) {
     // Site Config
     SITE_URL,
     UNSUBSCRIBE_URL,
-    SITE_OWNER
+    SITE_OWNER,
+    GITHUB_REPO_URL,
+
+    // Turnstile URLs
+    TURNSTILE_API_URL,
+    TURNSTILE_VERIFY_URL,
+
+    // Retry Configuration
+    RETRY_INITIAL_DELAY,
+    RETRY_MAX_DELAY,
+    RETRY_BACKOFF_MULTIPLIER,
+    RETRY_MAX_ATTEMPTS,
+    CIRCUIT_BREAKER_RESET_TIMEOUT,
+
+    // Timeout Configuration
+    GMAIL_TIMEOUT_MS,
+    CACHE_CONTROL_MAX_AGE,
+    CORS_MAX_AGE,
+    COOKIE_TTL
   };
 }
 
@@ -380,6 +476,7 @@ export function isConfigValid(config) {
   if (!config.GITHUB_TOKEN) errors.push('GITHUB_TOKEN is required');
   if (!config.TURNSTILE_SITE_KEY) errors.push('TURNSTILE_SITE_KEY is required');
   if (!config.TURNSTILE_SECRET_KEY) errors.push('TURNSTILE_SECRET_KEY is required');
+  // ADMIN_TOKEN is now optional - API access is disabled for maximum security
 
   return {
     valid: errors.length === 0,

@@ -4,13 +4,15 @@
 
 import { validateEmail, validatePhone, validateRequired, getClientIp, sanitizeHtml } from '../utils/validation.js';
 import { checkRateLimit, verifyTurnstile, storeContact, addSubscriber } from '../utils/kv.js';
+import { checkNativeFormRateLimit } from '../utils/nativeRateLimit.js';
 import { saveContactToGitHub } from '../utils/github.js';
 import { EmailFactory } from '../email/emailFactory.js';
+import { replicateContactToD1, replicateSubscriberToD1 } from '../utils/d1Replication.js';
 
 /**
  * Handle contact form requests
  */
-export async function handleContact(request, env, config) {
+export async function handleContact(request, env, config, ctx) {
   const url = new URL(request.url);
 
   // Handle GET request - return HTML form
@@ -26,7 +28,7 @@ export async function handleContact(request, env, config) {
 
   // Handle POST request - process contact form
   if (request.method === 'POST' && url.pathname === config.CONTACT_API_PATH) {
-    return await processContactForm(request, env, config);
+    return await processContactForm(request, env, config, ctx);
   }
 
   // Handle OPTIONS request - CORS preflight
@@ -42,7 +44,7 @@ export async function handleContact(request, env, config) {
 /**
  * Process contact form submission
  */
-async function processContactForm(request, env, config) {
+async function processContactForm(request, env, config, ctx) {
   try {
     // Parse request
     const contentType = request.headers.get('content-type') || '';
@@ -78,7 +80,16 @@ async function processContactForm(request, env, config) {
       return jsonResponse({ error: messageValidation.error }, 400, config);
     }
 
-    // Check rate limit
+    // FIRST: Check native rate limit for forms
+    const nativeCheck = await checkNativeFormRateLimit(request, env, 'contact');
+    if (!nativeCheck.allowed) {
+      return jsonResponse({
+        error: nativeCheck.reason || 'Too many submissions. Please wait a minute and try again.',
+        retryAfter: 60
+      }, 429, config);
+    }
+
+    // SECOND: Check KV-based rate limit (more restrictive, 24-hour window)
     const clientIp = getClientIp(request);
     const rateLimit = await checkRateLimit(env, config, clientIp);
 
@@ -124,7 +135,14 @@ async function processContactForm(request, env, config) {
     // Auto-subscribe to newsletter if requested
     if (data.subscribe === true && !isSubscribed) {
       await addSubscriber(env, config, emailValidation.email, clientIp);
+
+      // Replicate subscriber to D1 (async, non-blocking)
+      replicateSubscriberToD1(env, ctx, emailValidation.email, clientIp, new Date().toISOString());
     }
+
+    // Replicate contact to D1 (async, non-blocking)
+    // This runs in background and won't affect response time
+    replicateContactToD1(env, ctx, contactData);
 
     // Save to GitHub
     const githubResult = await saveContactToGitHub(config, contactData);
@@ -192,9 +210,23 @@ async function processContactForm(request, env, config) {
       console.error('Failed to send email notifications:', emailError);
     }
 
+    // Return appropriate response based on email delivery status
+    if (!ownerEmailSent && !confirmationEmailSent) {
+      // Both emails failed - still save contact but warn user
+      return jsonResponse({
+        message: 'Your message has been saved, but email notifications could not be sent. We will still review your message.',
+        warning: 'Email delivery failed'
+      }, 200, config);
+    } else if (!ownerEmailSent || !confirmationEmailSent) {
+      // Partial failure
+      return jsonResponse({
+        message: 'Thank you for contacting us! Your message has been received.',
+        warning: 'Partial email delivery'
+      }, 200, config);
+    }
+
     return jsonResponse({
-      message: 'Thank you for contacting us! We will get back to you soon.',
-      id: contactKey
+      message: 'Thank you for contacting us! We will get back to you soon.'
     }, 200, config);
 
   } catch (error) {

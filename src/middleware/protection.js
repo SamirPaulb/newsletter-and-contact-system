@@ -1,7 +1,11 @@
 /**
  * Protection Middleware - Rate limiting and bot detection
  * Protects against abuse while maintaining good UX
+ * Uses native Cloudflare Rate Limiting API as first layer,
+ * then falls back to KV-based rate limiting
  */
+
+import { checkNativeGlobalRateLimit, checkNativeBotRateLimit } from '../utils/nativeRateLimit.js';
 
 /**
  * Check if request is from a bot
@@ -57,8 +61,31 @@ export async function protectRequest(request, env, config) {
                    request.headers.get('x-forwarded-for') ||
                    'unknown';
 
+  // FIRST LAYER: Check native global rate limit
+  const nativeGlobalCheck = await checkNativeGlobalRateLimit(request, env);
+  if (!nativeGlobalCheck.allowed) {
+    console.log(`Native global rate limit blocked ${clientIp} on ${url.pathname}`);
+    return new Response(nativeGlobalCheck.reason || 'Rate limit exceeded', {
+      status: 429,
+      headers: {
+        'Retry-After': '60',
+        'Content-Type': 'text/plain'
+      }
+    });
+  }
+
   // Check if it's a bot
   if (isBot(request)) {
+    // Check native bot rate limit (very strict)
+    const nativeBotCheck = await checkNativeBotRateLimit(request, env);
+    if (!nativeBotCheck.allowed) {
+      console.log(`Native bot rate limit blocked ${clientIp}`);
+      return new Response(nativeBotCheck.reason || 'Bot access restricted', {
+        status: 403,
+        headers: { 'Content-Type': 'text/plain' }
+      });
+    }
+
     // Log bot activity
     await env.KV.put(
       `${config.PREFIX_BOT_DETECT}${clientIp}:${Date.now()}`,
@@ -81,7 +108,7 @@ export async function protectRequest(request, env, config) {
     }
   }
 
-  // Implement sliding window rate limiting
+  // SECOND LAYER: KV-based sliding window rate limiting (if native passes)
   const rateLimitKey = getRateLimitKey(request, config);
   const now = Date.now();
   const windowMs = config.GLOBAL_RATE_LIMIT_WINDOW_MS;

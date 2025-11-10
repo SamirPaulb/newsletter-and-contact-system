@@ -4,6 +4,7 @@
 
 import { validateEmail, getClientIp } from '../../utils/validation.js';
 import { removeSubscriber, checkRateLimit, verifyTurnstile } from '../../utils/kv.js';
+import { checkNativeFormRateLimit } from '../../utils/nativeRateLimit.js';
 
 /**
  * Handle unsubscribe requests
@@ -63,7 +64,16 @@ async function processUnsubscription(request, env, config) {
 
     const email = emailValidation.email;
 
-    // Check rate limit
+    // FIRST: Check native rate limit for forms
+    const nativeCheck = await checkNativeFormRateLimit(request, env, 'unsubscribe');
+    if (!nativeCheck.allowed) {
+      return jsonResponse({
+        error: nativeCheck.reason || 'Too many unsubscribe attempts. Please wait a minute and try again.',
+        retryAfter: 60
+      }, 429, config);
+    }
+
+    // SECOND: Check KV-based rate limit (more restrictive, 24-hour window)
     const clientIp = getClientIp(request);
     const rateLimit = await checkRateLimit(env, config, clientIp);
 
@@ -92,14 +102,12 @@ async function processUnsubscription(request, env, config) {
 
     if (!result.success) {
       return jsonResponse({
-        error: result.message || 'Email not found in the subscriber list',
-        email: email
+        error: result.message || 'Email not found in the subscriber list'
       }, 400, config);
     }
 
     return jsonResponse({
-      message: 'Successfully unsubscribed. You will no longer receive newsletter updates.',
-      email: email
+      message: 'Successfully unsubscribed. You will no longer receive newsletter updates.'
     }, 200, config);
 
   } catch (error) {

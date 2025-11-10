@@ -14,10 +14,14 @@ import { handleUnsubscribe } from './newsletter/frontend/unsubscribe.js';
 import { dailyRun } from './newsletter/backend/processor.js';
 import { handleContact } from './contact/frontend.js';
 import { runCleanup, getMaintenanceStatus } from './maintenance/cleanup.js';
-import { performBackup } from './maintenance/backup.js';
-import { runIncrementalMaintenance } from './maintenance/incremental.js';
+import { runDailyBackupChunk, mergeAndUploadBackups, runCleanup as runWeeklyCleanup } from './maintenance/incremental.js';
+import { backupD1ToGitHub } from './maintenance/d1Backup.js';
+import { backupD1ToGitHubChunked, getD1BackupStatus } from './maintenance/d1BackupChunked.js';
 import { protectRequest, verifyTurnstileToken } from './middleware/protection.js';
 import { handleStatus } from './pages/status.js';
+import { handleAdminPanel } from './pages/admin.js';
+import { checkAdminApiRateLimit } from './utils/adminRateLimit.js';
+import { checkNativeAdminRateLimit, checkNativeNewsletterCheckLimit } from './utils/nativeRateLimit.js';
 
 /**
  * Admin endpoints are now protected by Turnstile CAPTCHA
@@ -147,7 +151,7 @@ Sitemap:`, {
     // Newsletter Subscribe
     if (url.pathname.startsWith(config.SUBSCRIBE_WEB_PATH) ||
         url.pathname.startsWith(config.SUBSCRIBE_API_PATH)) {
-      return await handleSubscribe(request, env, config);
+      return await handleSubscribe(request, env, config, ctx);
     }
 
     // Newsletter Unsubscribe
@@ -159,44 +163,578 @@ Sitemap:`, {
     // Contact Form
     if (url.pathname.startsWith(config.CONTACT_WEB_PATH) ||
         url.pathname.startsWith(config.CONTACT_API_PATH)) {
-      return await handleContact(request, env, config);
+      return await handleContact(request, env, config, ctx);
     }
 
-    // Admin endpoints - REQUIRE AUTHENTICATION
-    // Trigger immediate check for newsletter - Protected by Turnstile and optionally Cloudflare Zero Trust
-    if (url.pathname === '/check-now' && request.method === 'POST') {
-      await dailyRun(env, config);
+    // ====================
+    // ADMIN ROUTES - All under /admin/* path
+    // Protected by Turnstile and can be further protected with Cloudflare Zero Trust
+    // ====================
+
+    // Admin panel (with Turnstile protection)
+    if (url.pathname === '/admin') {
+      return await handleAdminPanel(request, env, config);
+    }
+
+    // Admin API endpoints (require authentication)
+    if (url.pathname === '/admin/api/check-now' && request.method === 'POST') {
+      // SECURITY: Only allow session-based access from admin panel
+      // API token access is disabled for maximum security
+      const cookieHeader = request.headers.get('cookie') || '';
+      const hasValidSession = cookieHeader.includes('admin_session=');
+
+      if (!hasValidSession) {
+        return new Response(JSON.stringify({ error: 'Unauthorized. Access only allowed from admin panel.' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      // FIRST: Check native admin rate limit
+      const endpoint = url.pathname.split('/').pop(); // Get the endpoint name
+      const nativeCheck = await checkNativeAdminRateLimit(request, env, endpoint);
+      if (!nativeCheck.allowed) {
+        return new Response(JSON.stringify({
+          error: nativeCheck.reason || 'Admin API rate limit exceeded',
+          message: 'Please wait before making another request',
+          retryAfter: 60
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': '60'
+          }
+        });
+      }
+
+      // SECOND: Check KV-based admin API rate limit (more restrictive)
+      const rateLimitCheck = await checkAdminApiRateLimit(request, env, config);
+      if (!rateLimitCheck.allowed) {
+        return new Response(JSON.stringify({
+          error: 'Rate limit exceeded',
+          message: rateLimitCheck.message,
+          remaining: rateLimitCheck.remaining,
+          resetAt: rateLimitCheck.resetAt
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
+            'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
+            'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
+          }
+        });
+      }
+
+      console.log('Manual newsletter check triggered via admin API');
+      const result = await dailyRun(env, config);
       return new Response(JSON.stringify({
-        message: 'Daily processing triggered',
+        success: true,
+        message: 'Newsletter check completed',
+        timestamp: new Date().toISOString(),
+        rateLimit: {
+          remaining: rateLimitCheck.remaining,
+          resetAt: rateLimitCheck.resetAt
+        }
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
+          'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
+          'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
+        }
+      });
+    }
+
+    if (url.pathname === '/admin/api/maintenance' && request.method === 'POST') {
+      // SECURITY: Only allow session-based access from admin panel
+      const cookieHeader = request.headers.get('cookie') || '';
+      const hasValidSession = cookieHeader.includes('admin_session=');
+
+      if (!hasValidSession) {
+        return new Response(JSON.stringify({ error: 'Unauthorized. Access only allowed from admin panel.' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      // FIRST: Check native admin rate limit
+      const endpoint = url.pathname.split('/').pop(); // Get the endpoint name
+      const nativeCheck = await checkNativeAdminRateLimit(request, env, endpoint);
+      if (!nativeCheck.allowed) {
+        return new Response(JSON.stringify({
+          error: nativeCheck.reason || 'Admin API rate limit exceeded',
+          message: 'Please wait before making another request',
+          retryAfter: 60
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': '60'
+          }
+        });
+      }
+
+      // SECOND: Check KV-based admin API rate limit (more restrictive)
+      const rateLimitCheck = await checkAdminApiRateLimit(request, env, config);
+      if (!rateLimitCheck.allowed) {
+        return new Response(JSON.stringify({
+          error: 'Rate limit exceeded',
+          message: rateLimitCheck.message,
+          remaining: rateLimitCheck.remaining,
+          resetAt: rateLimitCheck.resetAt
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
+            'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
+            'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
+          }
+        });
+      }
+
+      console.log('Manual maintenance triggered via admin API');
+
+      // Run full maintenance
+      const cleanupResult = await runCleanup(env, config);
+
+      // Run incremental backup - first collect chunks then merge and upload
+      const chunkResult = await runDailyBackupChunk(env, config);
+      const backupResult = await mergeAndUploadBackups(env, config);
+
+      // Sanitize backup result to only include counts, no actual data
+      const sanitizedBackup = {
+        chunk: {
+          success: chunkResult.complete || false,
+          count: chunkResult.count || 0
+        },
+        upload: {
+          subscribers: {
+            success: backupResult.subscribers.success,
+            count: backupResult.subscribers.count,
+            error: backupResult.subscribers.error ? 'Failed' : null
+          },
+          contacts: {
+            success: backupResult.contacts.success,
+            count: backupResult.contacts.count,
+            error: backupResult.contacts.error ? 'Failed' : null
+          }
+        }
+      };
+
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Maintenance completed',
+        cleanup: cleanupResult,
+        backup: sanitizedBackup,
+        timestamp: new Date().toISOString(),
+        rateLimit: {
+          remaining: rateLimitCheck.remaining,
+          resetAt: rateLimitCheck.resetAt
+        }
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
+          'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
+          'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
+        }
+      });
+    }
+
+    if (url.pathname === '/admin/api/backup' && request.method === 'POST') {
+      // SECURITY: Only allow session-based access from admin panel
+      const cookieHeader = request.headers.get('cookie') || '';
+      const hasValidSession = cookieHeader.includes('admin_session=');
+
+      if (!hasValidSession) {
+        return new Response(JSON.stringify({ error: 'Unauthorized. Access only allowed from admin panel.' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      // FIRST: Check native admin rate limit
+      const endpoint = url.pathname.split('/').pop(); // Get the endpoint name
+      const nativeCheck = await checkNativeAdminRateLimit(request, env, endpoint);
+      if (!nativeCheck.allowed) {
+        return new Response(JSON.stringify({
+          error: nativeCheck.reason || 'Admin API rate limit exceeded',
+          message: 'Please wait before making another request',
+          retryAfter: 60
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': '60'
+          }
+        });
+      }
+
+      // SECOND: Check KV-based admin API rate limit (more restrictive)
+      const rateLimitCheck = await checkAdminApiRateLimit(request, env, config);
+      if (!rateLimitCheck.allowed) {
+        return new Response(JSON.stringify({
+          error: 'Rate limit exceeded',
+          message: rateLimitCheck.message,
+          remaining: rateLimitCheck.remaining,
+          resetAt: rateLimitCheck.resetAt
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
+            'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
+            'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
+          }
+        });
+      }
+
+      console.log('Manual backup triggered via admin API');
+
+      // Run incremental backup - first collect chunks then merge and upload
+      const chunkResult = await runDailyBackupChunk(env, config);
+      const result = await mergeAndUploadBackups(env, config);
+
+      // Only return counts and status, no actual data
+      const sanitizedResult = {
+        chunk: {
+          success: chunkResult.complete || false,
+          count: chunkResult.count || 0
+        },
+        upload: {
+          subscribers: {
+            success: result.subscribers.success,
+            count: result.subscribers.count,
+            error: result.subscribers.error ? 'Failed' : null
+          },
+          contacts: {
+            success: result.contacts.success,
+            count: result.contacts.count,
+            error: result.contacts.error ? 'Failed' : null
+          }
+        }
+      };
+
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Backup completed',
+        result: sanitizedResult,
+        timestamp: new Date().toISOString(),
+        rateLimit: {
+          remaining: rateLimitCheck.remaining,
+          resetAt: rateLimitCheck.resetAt
+        }
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
+          'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
+          'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
+        }
+      });
+    }
+
+    if (url.pathname === '/admin/api/cleanup' && request.method === 'POST') {
+      // SECURITY: Only allow session-based access from admin panel
+      const cookieHeader = request.headers.get('cookie') || '';
+      const hasValidSession = cookieHeader.includes('admin_session=');
+
+      if (!hasValidSession) {
+        return new Response(JSON.stringify({ error: 'Unauthorized. Access only allowed from admin panel.' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      // FIRST: Check native admin rate limit
+      const endpoint = url.pathname.split('/').pop(); // Get the endpoint name
+      const nativeCheck = await checkNativeAdminRateLimit(request, env, endpoint);
+      if (!nativeCheck.allowed) {
+        return new Response(JSON.stringify({
+          error: nativeCheck.reason || 'Admin API rate limit exceeded',
+          message: 'Please wait before making another request',
+          retryAfter: 60
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': '60'
+          }
+        });
+      }
+
+      // SECOND: Check KV-based admin API rate limit (more restrictive)
+      const rateLimitCheck = await checkAdminApiRateLimit(request, env, config);
+      if (!rateLimitCheck.allowed) {
+        return new Response(JSON.stringify({
+          error: 'Rate limit exceeded',
+          message: rateLimitCheck.message,
+          remaining: rateLimitCheck.remaining,
+          resetAt: rateLimitCheck.resetAt
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
+            'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
+            'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
+          }
+        });
+      }
+
+      console.log('Manual cleanup triggered via admin API');
+      const result = await runCleanup(env, config);
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Cleanup completed',
+        result,
+        timestamp: new Date().toISOString(),
+        rateLimit: {
+          remaining: rateLimitCheck.remaining,
+          resetAt: rateLimitCheck.resetAt
+        }
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
+          'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
+          'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
+        }
+      });
+    }
+
+    // D1 Backup endpoint - trigger manual D1 database backup
+    if (url.pathname === '/admin/api/d1-backup' && request.method === 'POST') {
+      // SECURITY: Only allow session-based access from admin panel
+      const cookieHeader = request.headers.get('cookie') || '';
+      const hasValidSession = cookieHeader.includes('admin_session=');
+
+      if (!hasValidSession) {
+        return new Response(JSON.stringify({ error: 'Unauthorized. Access only allowed from admin panel.' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      // FIRST: Check native admin rate limit
+      const endpoint = url.pathname.split('/').pop(); // Get the endpoint name
+      const nativeCheck = await checkNativeAdminRateLimit(request, env, endpoint);
+      if (!nativeCheck.allowed) {
+        return new Response(JSON.stringify({
+          error: nativeCheck.reason || 'Admin API rate limit exceeded',
+          message: 'Please wait before making another request',
+          retryAfter: 60
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': '60'
+          }
+        });
+      }
+
+      // SECOND: Check KV-based admin API rate limit (more restrictive)
+      const rateLimitCheck = await checkAdminApiRateLimit(request, env, config);
+      if (!rateLimitCheck.allowed) {
+        return new Response(JSON.stringify({
+          error: 'Rate limit exceeded',
+          message: rateLimitCheck.message,
+          remaining: rateLimitCheck.remaining,
+          resetAt: rateLimitCheck.resetAt
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
+            'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
+            'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
+          }
+        });
+      }
+
+      console.log('Manual D1 backup triggered via admin API');
+
+      // Use chunked backup for free plan CPU limits
+      const result = await backupD1ToGitHubChunked(env, config);
+
+      // Sanitize result - never expose actual data
+      const sanitizedResult = {
+        success: result.success,
+        message: result.message,
+        continueNextCron: result.continueNextCron || false
+      };
+
+      return new Response(JSON.stringify({
+        success: result.success,
+        message: 'D1 backup process initiated',
+        result: sanitizedResult,
+        timestamp: new Date().toISOString(),
+        rateLimit: {
+          remaining: rateLimitCheck.remaining,
+          resetAt: rateLimitCheck.resetAt
+        }
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
+          'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
+          'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
+        }
+      });
+    }
+
+    // D1 Backup Status endpoint - check D1 backup progress
+    if (url.pathname === '/admin/api/d1-backup-status' && request.method === 'GET') {
+      // SECURITY: Only allow session-based access from admin panel
+      const cookieHeader = request.headers.get('cookie') || '';
+      const hasValidSession = cookieHeader.includes('admin_session=');
+
+      if (!hasValidSession) {
+        return new Response(JSON.stringify({ error: 'Unauthorized. Access only allowed from admin panel.' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      const status = await getD1BackupStatus(env);
+
+      return new Response(JSON.stringify({
+        success: true,
+        status: status,
         timestamp: new Date().toISOString()
       }), {
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // Maintenance endpoint - Protected by Turnstile and optionally Cloudflare Zero Trust
-    if (url.pathname === '/maintenance' && request.method === 'POST') {
-      const cleanupResults = await runCleanup(env, config);
-      const backupResults = await performBackup(env, config);
+    // Admin pages (require authentication)
+    if (url.pathname === '/admin/status') {
+      // Verify admin session
+      const cookieHeader = request.headers.get('cookie') || '';
+      if (!cookieHeader.includes('admin_session=')) {
+        return new Response('Unauthorized', {
+          status: 401,
+          headers: {
+            'Content-Type': 'text/plain',
+            'Location': '/admin'
+          }
+        });
+      }
 
-      const results = {
-        cleanup: cleanupResults,
-        backup: backupResults,
-        timestamp: new Date().toISOString()
-      };
+      // FIRST: Check native admin rate limit
+      const nativeCheck = await checkNativeAdminRateLimit(request, env, 'status');
+      if (!nativeCheck.allowed) {
+        return new Response(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Rate Limited</title>
+            <style>
+              body { font-family: sans-serif; text-align: center; padding: 50px; }
+              .error { color: #d32f2f; }
+            </style>
+          </head>
+          <body>
+            <h1 class="error">Rate Limit Exceeded</h1>
+            <p>${nativeCheck.reason || 'Please wait before making another request'}</p>
+            <p>Retry after: 60 seconds</p>
+            <a href="/admin">Return to Admin Panel</a>
+          </body>
+          </html>
+        `, {
+          status: 429,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Retry-After': '60'
+          }
+        });
+      }
 
-      return new Response(JSON.stringify(results, null, 2), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+      // SECOND: Check KV-based admin API rate limit
+      const rateLimitCheck = await checkAdminApiRateLimit(request, env, config);
+      if (!rateLimitCheck.allowed) {
+        return new Response(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Rate Limited</title>
+            <style>
+              body { font-family: sans-serif; text-align: center; padding: 50px; }
+              .error { color: #d32f2f; }
+            </style>
+          </head>
+          <body>
+            <h1 class="error">Rate Limit Exceeded</h1>
+            <p>${rateLimitCheck.message}</p>
+            <p>Reset at: ${rateLimitCheck.resetAt.toLocaleString()}</p>
+            <a href="/admin">Return to Admin Panel</a>
+          </body>
+          </html>
+        `, {
+          status: 429,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
+            'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
+            'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
+          }
+        });
+      }
 
-    // Status endpoint - Protected by Turnstile and optionally Cloudflare Zero Trust
-    if (url.pathname === '/status') {
       return await handleStatus(request, env, config);
     }
 
-    // Debug endpoint - Protected by Turnstile and optionally Cloudflare Zero Trust
-    if (url.pathname === '/debug') {
+    if (url.pathname === '/admin/debug') {
+      // Verify admin session
+      const cookieHeader = request.headers.get('cookie') || '';
+      if (!cookieHeader.includes('admin_session=')) {
+        return new Response('Unauthorized', {
+          status: 401,
+          headers: {
+            'Content-Type': 'text/plain',
+            'Location': '/admin'
+          }
+        });
+      }
+
+      // FIRST: Check native admin rate limit
+      const endpoint = url.pathname.split('/').pop(); // Get the endpoint name
+      const nativeCheck = await checkNativeAdminRateLimit(request, env, endpoint);
+      if (!nativeCheck.allowed) {
+        return new Response(JSON.stringify({
+          error: nativeCheck.reason || 'Admin API rate limit exceeded',
+          message: 'Please wait before making another request',
+          retryAfter: 60
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': '60'
+          }
+        });
+      }
+
+      // SECOND: Check KV-based admin API rate limit (more restrictive)
+      const rateLimitCheck = await checkAdminApiRateLimit(request, env, config);
+      if (!rateLimitCheck.allowed) {
+        return new Response(JSON.stringify({
+          error: 'Rate limit exceeded',
+          message: rateLimitCheck.message,
+          remaining: rateLimitCheck.remaining,
+          resetAt: rateLimitCheck.resetAt
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
+            'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
+            'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
+          }
+        });
+      }
+
       const debug = {
         environment: {
           hasKV: !!env.KV,
@@ -455,14 +993,52 @@ async function handleScheduled(event, env, ctx) {
   try {
     console.log('Cron triggered: ' + event.cron);
 
-    // Run incremental maintenance (small chunk)
-    // This processes only a tiny portion each time to stay under CPU limits
-    const maintenanceResult = await runIncrementalMaintenance(env, config);
-    console.log('Incremental maintenance:', maintenanceResult);
+    const now = new Date();
+    const dayOfWeek = now.getUTCDay(); // 0 = Sunday, 6 = Saturday
+    const hour = now.getUTCHours();
+
+    // Check if it's Wednesday at noon UTC for D1 backup
+    if (dayOfWeek === 3 && hour === 12) {
+      console.log('Wednesday noon - Running D1 database backup to GitHub');
+      // Use chunked backup for CPU-safe operation on free plan
+      const d1BackupResult = await backupD1ToGitHubChunked(env, config);
+      console.log('D1 backup result:', d1BackupResult);
+
+      // Store last D1 backup status
+      await env.KV.put('d1:last-backup', JSON.stringify({
+        timestamp: new Date().toISOString(),
+        result: d1BackupResult
+      }));
+    }
+
+    // Check if it's Saturday (weekly maintenance day)
+    if (dayOfWeek === 6) {
+      console.log('Saturday - Running weekly maintenance sequence');
+
+      // 1. First run daily backup chunk collection
+      console.log('Step 1: Daily backup chunk collection');
+      const dailyBackupResult = await runDailyBackupChunk(env, config);
+      console.log('Daily backup chunk result:', dailyBackupResult);
+
+      // 2. Then merge chunks and upload to GitHub
+      console.log('Step 2: Merging and uploading weekly backup');
+      const weeklyBackupResult = await mergeAndUploadBackups(env, config);
+      console.log('Weekly backup result:', weeklyBackupResult);
+
+      // 3. Finally run cleanup
+      console.log('Step 3: Running weekly cleanup');
+      const cleanupResult = await runWeeklyCleanup(env, config);
+      console.log('Weekly cleanup result:', cleanupResult);
+
+    } else {
+      // Regular daily run - just collect backup chunks
+      console.log('Daily backup chunk collection');
+      const dailyBackupResult = await runDailyBackupChunk(env, config);
+      console.log('Daily backup chunk result:', dailyBackupResult);
+    }
 
     // Also check for newsletters (lightweight)
     const lastNewsletterCheck = await env.KV.get(`${config.KEEP_PREFIX_DAILY}lastNewsletterCheck`);
-    const now = new Date();
 
     if (!lastNewsletterCheck || (now - new Date(lastNewsletterCheck)) > 60 * 60 * 1000) {
       // Run newsletter check if it's been more than an hour
@@ -638,35 +1214,6 @@ function getHomePage(config) {
             </a>
         </div>
 
-        <h2 style="margin-top: 40px; color: #333;">Admin Endpoints</h2>
-        <p style="color: #666; margin-bottom: 20px;">These endpoints are protected by Turnstile CAPTCHA and can be further secured with Cloudflare Zero Trust</p>
-
-        <div class="links">
-            <a href="/status" class="link-card">
-                <div class="icon">🔍</div>
-                <h3>Status</h3>
-                <p>View detailed system status</p>
-            </a>
-
-            <a href="/check-now" class="link-card" onclick="event.preventDefault(); if(confirm('This will trigger immediate newsletter check. Continue?')) { fetch('/check-now', {method: 'POST'}).then(r => r.json()).then(d => alert(JSON.stringify(d, null, 2))).catch(e => alert('Error: ' + e)); }">
-                <div class="icon">🚀</div>
-                <h3>Check Now</h3>
-                <p>Trigger newsletter check (POST)</p>
-            </a>
-
-            <a href="/maintenance" class="link-card" onclick="event.preventDefault(); if(confirm('This will run maintenance tasks including cleanup and backup. Continue?')) { fetch('/maintenance', {method: 'POST'}).then(r => r.json()).then(d => alert('Maintenance completed. Check console for details.')).then(() => console.log(d)).catch(e => alert('Error: ' + e)); }">
-                <div class="icon">🔧</div>
-                <h3>Maintenance</h3>
-                <p>Run cleanup & backup (POST)</p>
-            </a>
-
-            <a href="/debug" class="link-card">
-                <div class="icon">🐛</div>
-                <h3>Debug</h3>
-                <p>View configuration info</p>
-            </a>
-        </div>
-
         <div class="status">
             <h3>System Information</h3>
             <div class="status-item">
@@ -690,6 +1237,9 @@ function getHomePage(config) {
         <footer>
             <p>Powered by Cloudflare Workers • Version 2.0 (Production Hardened)</p>
             <p>© ${new Date().getFullYear()} ${config.SITE_OWNER}</p>
+            <p style="margin-top: 15px;">
+                <a href="/admin" style="color: #667eea; text-decoration: none; font-size: 12px;">🔐 Admin Panel</a>
+            </p>
         </footer>
     </div>
 </body>

@@ -282,9 +282,12 @@ async function processQueueBatch(env, config, queueKey, queue) {
     queue.sentTo = queue.sentTo || [];
 
     // Track successfully sent recipients
-    if (sentResult.totalSent !== undefined && sentResult.totalSent > 0) {
-      const successfulRecipients = nextBatch.slice(0, sentResult.totalSent);
-      queue.sentTo.push(...successfulRecipients);
+    // CRITICAL: Check for 0 explicitly - totalSent=0 is a valid failure state
+    if (sentResult.totalSent !== undefined && sentResult.totalSent !== null) {
+      if (sentResult.totalSent > 0) {
+        const successfulRecipients = nextBatch.slice(0, sentResult.totalSent);
+        queue.sentTo.push(...successfulRecipients);
+      }
 
       // Handle partial failures
       if (sentResult.totalFailed > 0) {

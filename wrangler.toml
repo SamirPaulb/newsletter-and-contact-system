@@ -6,14 +6,20 @@ workers_dev = true
 
 [triggers]
 crons = [
-  "0 0 * * sun,mon,tue,wed,thu,fri,sat",  # Daily at 00:00 UTC
-  "0 0 * * sat"                            # Weekly at 00:00 UTC on Saturday
+  "0 0 * * sun,mon,tue,wed,thu,fri,sat",  # Daily at 00:00 UTC (KV backups)
+  "0 0 * * sat",                           # Weekly at 00:00 UTC on Saturday (maintenance)
+  "0 12 * * wed"                           # Weekly at 12:00 UTC on Wednesday (D1 backup)
 ]
 
 [[kv_namespaces]]
 binding = "KV"
 id = "5117dcc57e2f4229865539675b5435bb"
 preview_id = "5117dcc57e2f4229865539675b5435bb"
+
+[[d1_databases]]
+binding = "D1"
+database_name = "data"
+database_id = "464d1bfc-b757-4e4d-8c91-0013417b1680"
 
 [vars]
 # Email Provider Configuration - 'gmail', 'worker-email', or 'mailerlite'
@@ -61,6 +67,7 @@ PREFIX_RATELIMIT = "ratelimit"
 PREFIX_CAPTCHA = "captcha"
 PREFIX_BOT = "bot"
 PREFIX_BOT_DETECT = "bot-detect"
+PREFIX_BACKUP_CHUNK = "backup-chunk"
 
 # Cleanup Configuration - Additional prefixes to keep during maintenance
 KEEP_PREFIX_MAINTENANCE = "maintenance:last-"
@@ -71,6 +78,8 @@ KEEP_PREFIX_STATS = "stats:"
 # Rate Limiting and Protection
 RATE_LIMIT_MAX = 5  # Max form submissions per window
 RATE_LIMIT_WINDOW_HOURS = 24  # Window for form submissions
+ADMIN_API_RATE_LIMIT_MAX = 5  # Max admin API calls per IP per window
+ADMIN_API_RATE_LIMIT_WINDOW_HOURS = 24  # Window for admin API rate limiting (in hours)
 GLOBAL_RATE_LIMIT_PER_MINUTE = 30  # Max requests per minute per IP
 GLOBAL_RATE_LIMIT_WINDOW_MS = 60000  # Rate limit window in milliseconds (1 minute)
 ABUSE_THRESHOLD = 3  # Number of rate limit hits before showing Turnstile
@@ -85,6 +94,12 @@ TTL_ABUSE_COUNTER = 3600  # 1 hour - Abuse counters auto-expire
 TTL_DAILY_STATS = 172800  # 2 days - Daily statistics auto-expire
 TTL_ERROR_LOGS = 604800  # 7 days - Error logs auto-expire
 TTL_FEED_ERROR = 86400  # 24 hours - Feed fetch errors auto-expire
+TTL_BACKUP_CHUNK = 604800  # 7 days - Backup chunks auto-expire
+
+# Backup Processing Configuration
+BACKUP_CHUNK_SIZE = 20  # Records to process at a time
+BACKUP_CHUNK_LIST_LIMIT = 1000  # Max chunks to list when merging
+CLEANUP_BATCH_SIZE = 100  # Keys to delete per batch in cleanup
 
 # URL Paths
 SUBSCRIBE_WEB_PATH = "/subscribe"
@@ -98,6 +113,11 @@ CONTACT_API_PATH = "/api/contact"
 SITE_URL = "https://samirpaulb.github.io"
 UNSUBSCRIBE_URL = "https://samirpaulb.github.io/unsubscribe-newsletter/"
 SITE_OWNER = "Samir P."
+GITHUB_REPO_URL = "https://github.com/SamirPaulb/newsletter-and-contact-system"
+
+# Turnstile Configuration
+TURNSTILE_API_URL = "https://challenges.cloudflare.com/turnstile/v0/api.js"
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
 # Optional: extend disposable domain blocklist (CSV)
 DISPOSABLE_DOMAINS = ""
@@ -112,6 +132,19 @@ MAILERLITE_API_URL = "https://connect.mailerlite.com/api"
 MAILERLITE_BATCH_SIZE = 50  # Number of recipients per batch
 MAILERLITE_BATCH_DELAY = 1000  # Delay between batches in milliseconds
 MAILERLITE_RATE_LIMIT = 120  # API rate limit per minute
+
+# Retry Configuration
+RETRY_INITIAL_DELAY = 1000  # Initial delay in milliseconds
+RETRY_MAX_DELAY = 30000  # Maximum delay in milliseconds
+RETRY_BACKOFF_MULTIPLIER = 2  # Exponential backoff multiplier
+RETRY_MAX_ATTEMPTS = 3  # Maximum retry attempts
+CIRCUIT_BREAKER_RESET_TIMEOUT = 60000  # Circuit breaker reset timeout in milliseconds
+
+# Timeout Configuration
+GMAIL_TIMEOUT_MS = 30000  # Gmail SMTP timeout in milliseconds
+CACHE_CONTROL_MAX_AGE = 3600  # Cache-Control max-age in seconds
+CORS_MAX_AGE = 86400  # CORS max-age in seconds
+COOKIE_TTL = 3600  # Cookie TTL in seconds
 
 # Workers Logs and Traces
 [observability]
@@ -139,18 +172,60 @@ persist = true
 # 3. GITHUB_TOKEN - GitHub personal access token with repo write access
 # 4. TURNSTILE_SITE_KEY - Cloudflare Turnstile site key
 # 5. TURNSTILE_SECRET_KEY - Cloudflare Turnstile secret key
+# 6. ADMIN_TOKEN - (OPTIONAL - API access disabled for maximum security)
 #
 # For Gmail provider:
-# 6. GMAIL_USER - Gmail address for SMTP authentication
-# 7. GMAIL_PASSWORD - Gmail App Password (not regular password)
+# 7. GMAIL_USER - Gmail address for SMTP authentication
+# 8. GMAIL_PASSWORD - Gmail App Password (not regular password)
 #
 # For Worker Email provider:
-# 8. WORKER_EMAIL_FROM - Email address for worker-email provider
+# 9. WORKER_EMAIL_FROM - Email address for worker-email provider
 #
 # For MailerLite provider:
-# 9. MAILERLITE_API_TOKEN - MailerLite API token
+# 10. MAILERLITE_API_TOKEN - MailerLite API token
 #
 # To set secrets, use:
 # wrangler secret put SECRET_NAME
 # Or configure them in the Cloudflare Dashboard under Settings > Variables
 # ===================================================================
+
+# ===================================================================
+# NATIVE RATE LIMITING CONFIGURATION
+# ===================================================================
+# These native rate limiters act as the first line of defense
+# with slightly lower limits than KV-based rate limiting to save KV operations
+
+# Global rate limiting - First check for all requests
+[[ratelimits]]
+name = "GLOBAL_RATE_LIMITER"
+namespace_id = "1001"
+# 25 requests per minute (lower than KV's 30)
+simple = { limit = 25, period = 60 }
+
+# Form submission rate limiting (subscribe, unsubscribe, contact)
+[[ratelimits]]
+name = "FORM_RATE_LIMITER"
+namespace_id = "1002"
+# 4 requests per 60 seconds (KV allows 5 per 24 hours, this is more granular)
+simple = { limit = 4, period = 60 }
+
+# Admin API rate limiting
+[[ratelimits]]
+name = "ADMIN_RATE_LIMITER"
+namespace_id = "1003"
+# 4 requests per 60 seconds (KV allows 5 per 24 hours)
+simple = { limit = 4, period = 60 }
+
+# Aggressive bot protection - for detected bots/suspicious activity
+[[ratelimits]]
+name = "BOT_RATE_LIMITER"
+namespace_id = "1004"
+# Very strict: 2 requests per minute for suspected bots
+simple = { limit = 2, period = 60 }
+
+# Newsletter check rate limiting - for admin check-now endpoint
+[[ratelimits]]
+name = "NEWSLETTER_CHECK_LIMITER"
+namespace_id = "1005"
+# 2 checks per minute (prevent abuse of RSS checking)
+simple = { limit = 2, period = 60 }

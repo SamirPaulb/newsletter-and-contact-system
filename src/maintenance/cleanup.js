@@ -216,9 +216,11 @@ export async function runCleanup(env, config) {
               results.cleanedPrefixes.push(prefix);
             }
 
-            console.log(`Deleted: ${key.name}`);
+            // Don't log key names as they may contain sensitive data
+            // console.log(`Deleted: ${key.name}`);
           } catch (error) {
-            console.error(`Error deleting ${key.name}:`, error);
+            // Don't log key names as they may contain sensitive data
+            console.error('Error deleting key:', error);
           }
         } else {
           // Track which prefix was kept
