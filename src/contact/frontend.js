@@ -170,7 +170,7 @@ async function processContactForm(request, env, config, ctx) {
       let ownerEmailSent = false;
       const ownerEmail = config.EMAIL_FROM_ADDRESS || config.GMAIL_USER || config.WORKER_EMAIL_FROM;
 
-      console.log(`Sending contact notification to owner`);
+      console.log('Sending contact notification to owner');
 
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
@@ -180,6 +180,7 @@ async function processContactForm(request, env, config, ctx) {
           });
           if (ownerResult.success) {
             ownerEmailSent = true;
+            console.log('Owner notification sent successfully');
             break;
           }
           console.warn(`Failed to send owner email (attempt ${attempt}/3): ${ownerResult.error}`);
@@ -196,6 +197,8 @@ async function processContactForm(request, env, config, ctx) {
 
       // Confirmation email to sender - optional, nice to have
       let confirmationEmailSent = false;
+      console.log('Attempting to send confirmation to user');
+
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           const confirmResult = await EmailFactory.sendContactEmail(config, env, {
@@ -204,7 +207,7 @@ async function processContactForm(request, env, config, ctx) {
           });
           if (confirmResult.success) {
             confirmationEmailSent = true;
-            console.log(`Confirmation sent successfully`);
+            console.log('Confirmation sent successfully to user');
             break;
           }
           console.warn(`Failed to send confirmation email (attempt ${attempt}/3): ${confirmResult.error}`);

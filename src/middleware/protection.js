@@ -51,9 +51,14 @@ export async function protectRequest(request, env, config) {
   }
 
   // Allow static resources without protection
-  const staticPaths = ['/favicon.ico', '/robots.txt', '/sitemap.xml'];
+  const staticPaths = ['/robots.txt', '/sitemap.xml'];
   if (staticPaths.includes(url.pathname)) {
     return null; // No protection needed
+  }
+
+  // Return empty response for favicon to avoid 404 logs
+  if (url.pathname === '/favicon.ico') {
+    return new Response(null, { status: 204 }); // No Content
   }
 
   // Get client IP

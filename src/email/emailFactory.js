@@ -83,7 +83,7 @@ export class EmailFactory {
                 return { success: false, error: 'Owner email not configured' };
             }
 
-            console.log(`Sending contact notification to owner, with reply-to`);
+            console.log('Sending contact notification to owner with reply-to capability');
 
             return await provider.sendEmail({
                 to: ownerEmail,
