@@ -470,7 +470,7 @@ export async function handleAdminPanel(request, env, config) {
         const response = new Response(renderAdminPanel(config, true), {
           headers: {
             'Content-Type': 'text/html; charset=utf-8',
-            'Set-Cookie': `admin_session=${Date.now()}_${Math.random().toString(36).substring(7)}; Path=/admin; HttpOnly; Secure; SameSite=Strict; Max-Age=3600`
+            'Set-Cookie': `admin_session=${Date.now()}_${Math.random().toString(36).substring(7)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=3600`
           }
         });
         return response;

@@ -614,11 +614,10 @@ Sitemap:`, {
       // Verify admin session
       const cookieHeader = request.headers.get('cookie') || '';
       if (!cookieHeader.includes('admin_session=')) {
-        return new Response('Unauthorized', {
+        return new Response('Unauthorized - Please login at /admin first', {
           status: 401,
           headers: {
-            'Content-Type': 'text/plain',
-            'Location': '/admin'
+            'Content-Type': 'text/plain'
           }
         });
       }
@@ -690,11 +689,10 @@ Sitemap:`, {
       // Verify admin session
       const cookieHeader = request.headers.get('cookie') || '';
       if (!cookieHeader.includes('admin_session=')) {
-        return new Response('Unauthorized', {
+        return new Response('Unauthorized - Please login at /admin first', {
           status: 401,
           headers: {
-            'Content-Type': 'text/plain',
-            'Location': '/admin'
+            'Content-Type': 'text/plain'
           }
         });
       }
