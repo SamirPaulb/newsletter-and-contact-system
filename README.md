@@ -1,6 +1,6 @@
 # Serverless Newsletter & Contact Management System using Cloudflare Workers
 
-A production-ready, serverless newsletter and contact form management system built on Cloudflare Workers with enterprise-grade security, automated backups, and multiple email provider support.
+A production-ready, serverless newsletter and contact form management system built on Cloudflare Workers with enterprise-grade security, dual-layer data persistence, and multiple email provider support.
 
 ## 🚀 Features
 
@@ -21,15 +21,14 @@ A production-ready, serverless newsletter and contact form management system bui
 
 ### Data Management
 - **Dual Storage System**:
-  - KV for operational data (fast access)
-  - D1 database for archival (SQL-based, permanent storage)
-- **Incremental Backup System**: Daily chunks with weekly GitHub uploads
-- **D1 Database Backup**: Weekly SQL exports to GitHub (CPU-optimized chunking)
+  - KV for operational data (fast access, subscriber management)
+  - D1 database for archival (SQL-based, permanent append-only storage)
+- **Real-time D1 Replication**: Automatic async replication from KV to D1
 - **Auto-Cleanup**: TTL-based expiration for temporary data
-- **Disaster Recovery**: Complete data restoration capability
+- **Append-Only Archive**: D1 maintains permanent audit trail
 
 ### Performance Optimizations
-- **CPU-Safe Processing**: Incremental operations to avoid timeouts
+- **Async Processing**: Non-blocking D1 replication using ctx.waitUntil()
 - **Prefix-Based Queries**: Efficient KV operations using prefix filtering
 - **Batch Processing**: Configurable batch sizes for email delivery
 - **Retry Logic**: Exponential backoff with dead letter queue
@@ -43,15 +42,12 @@ graph TB
         SUB[Subscribe /subscribe]
         UNSUB[Unsubscribe /unsubscribe]
         CONTACT[Contact /contact]
-        HEALTH[Health /health]
     end
 
     subgraph "Protected Admin"
         ADMIN[Admin Panel /admin]
         STATUS[Status /admin/status]
-        DEBUG[Debug /admin/debug]
-        BACKUP[Backup API /admin/api/backup]
-        MAINTAIN[Maintenance API /admin/api/maintenance]
+        CHECK[Check Now /admin/api/check-now]
     end
 
     subgraph "Security Layers"
@@ -62,7 +58,7 @@ graph TB
 
     subgraph "Data Storage"
         KV[(Cloudflare KV)]
-        GITHUB[(GitHub Backup)]
+        D1[(D1 Database)]
     end
 
     subgraph "Email Providers"
@@ -75,31 +71,35 @@ graph TB
     SUB --> TURN --> KV
     CONTACT --> TURN --> KV
     ADMIN --> SESSION --> KV
-    BACKUP --> SESSION --> GITHUB
+    KV -.->|Async Replication| D1
     KV --> GMAIL
     KV --> MAILER
     KV --> WORKER
 ```
 
-## 🔄 Backup Strategy
+## 🔄 Data Persistence Strategy
 
 ```mermaid
 graph LR
-    subgraph "Daily Operations Mon-Fri"
-        D1[Read KV Data] --> D2[Process 20 Records]
-        D2 --> D3[Store Chunk in KV]
-        D3 --> D4[TTL: 7 Days]
+    subgraph "Real-time Operations"
+        F1[Form Submission] --> F2[Save to KV]
+        F2 --> F3[Immediate Response]
+        F2 -.->|Async| F4[Replicate to D1]
     end
 
-    subgraph "Saturday Weekly Process"
-        S1[Daily Backup] --> S2[Merge All Chunks]
-        S2 --> S3[Upload to GitHub]
-        S3 --> S4[Delete Chunks]
-        S4 --> S5[Run Cleanup]
+    subgraph "Data Layers"
+        KV[KV Storage<br/>Operational Data]
+        D1[D1 Database<br/>Permanent Archive]
     end
 
-    D4 -.->|Accumulate| S2
-    S3 -->|Update| GH[GitHub CSV Files]
+    subgraph "TTL Cleanup"
+        T1[Rate Limits] -->|2 min| T2[Auto Expire]
+        T3[Bot Detection] -->|24 hr| T2
+        T4[Temp Data] -->|Configurable| T2
+    end
+
+    F4 --> D1
+    KV --> D1
 ```
 
 ## 📁 Project Structure
@@ -122,11 +122,6 @@ src/
 │   ├── mailerLiteProvider.js  # MailerLite API integration
 │   ├── workerEmailProvider.js # Cloudflare Email routing
 │   └── emailFactory.js        # Provider factory pattern
-├── maintenance/
-│   ├── incremental.js         # Daily backup chunks & weekly merge
-│   ├── cleanup.js             # Cleanup temporary entries
-│   ├── d1Backup.js            # D1 database SQL export
-│   └── d1BackupChunked.js     # CPU-optimized D1 backup
 ├── middleware/
 │   └── protection.js          # Rate limiting & bot protection
 ├── pages/
@@ -136,7 +131,6 @@ src/
     ├── adminRateLimit.js      # Admin-specific rate limiting
     ├── kv.js                  # KV storage utilities
     ├── d1Replication.js       # D1 database replication (async)
-    ├── github.js              # GitHub API integration
     ├── validation.js          # Input validation & sanitization
     ├── retry.js               # Retry logic implementation
     ├── nativeRateLimit.js     # Native Cloudflare rate limiting
@@ -165,7 +159,7 @@ src/
 - **No PII Exposure**: Customer emails/IPs never returned in API responses
 - **Sanitized Responses**: Only counts and success indicators returned
 - **XSS Prevention**: All inputs sanitized with proper escaping
-- **Private Backups**: GitHub repository must be private
+- **Append-Only D1**: No deletes, maintaining complete audit trail
 
 ## 📊 Data Flow Diagram
 
@@ -174,24 +168,25 @@ sequenceDiagram
     participant User
     participant CF as Cloudflare Worker
     participant KV as KV Storage
+    participant D1 as D1 Database
     participant Email as Email Provider
-    participant GitHub
 
     User->>CF: Subscribe Request
     CF->>CF: Validate Turnstile
     CF->>CF: Check Rate Limit
     CF->>KV: Store Subscriber
+    CF-->>D1: Async Replicate (waitUntil)
+    CF->>User: Success Response
     CF->>Email: Send Welcome Email
 
-    Note over CF,KV: Daily Cron
-    CF->>KV: Read Subscribers (chunks)
-    CF->>KV: Store Backup Chunk
+    Note over CF,KV: Newsletter Check (Hourly)
+    CF->>KV: Read Subscribers
+    CF->>Email: Send Batch Emails
+    CF->>KV: Update Sent Records
 
-    Note over CF,GitHub: Weekly (Saturday)
-    CF->>KV: Merge All Chunks
-    CF->>GitHub: Upload CSV Files
-    CF->>KV: Delete Chunks
-    CF->>KV: Cleanup Temp Data
+    Note over KV: TTL Auto-Cleanup
+    KV->>KV: Expire Rate Limits (2 min)
+    KV->>KV: Expire Bot Detection (24 hr)
 ```
 
 ## ⚙️ Configuration
@@ -205,12 +200,10 @@ EMAIL_PROVIDER = "gmail"  # Options: gmail, mailerlite, worker-email
 # Batch Processing
 BATCH_SIZE = 100
 BATCH_WAIT_MINUTES = 5
-BACKUP_CHUNK_SIZE = 20
 
 # TTL Configuration (seconds)
 TTL_RATE_LIMIT = 120      # 2 minutes
 TTL_BOT_DETECT = 86400    # 24 hours
-TTL_BACKUP_CHUNK = 604800 # 7 days
 
 # KV-Based Rate Limiting (Second Layer)
 RATE_LIMIT_MAX = 5
@@ -240,7 +233,6 @@ ADMIN_API_RATE_LIMIT_MAX = 5
 ```bash
 # Core Requirements
 wrangler secret put EMAIL_FROM_ADDRESS
-wrangler secret put GITHUB_TOKEN
 wrangler secret put TURNSTILE_SITE_KEY
 wrangler secret put TURNSTILE_SECRET_KEY
 
@@ -257,10 +249,9 @@ wrangler secret put MAILERLITE_API_TOKEN
 ### Prerequisites
 1. Cloudflare account with Workers enabled
 2. KV namespace created
-3. D1 database created with tables (see setup below)
-4. Private GitHub repository for backups
-5. Email provider credentials
-6. Turnstile site configured
+3. D1 database created with tables
+4. Email provider credentials
+5. Turnstile site configured
 
 ### Installation
 
@@ -290,13 +281,13 @@ npx wrangler deploy
 
 ### KV Operations
 - **Prefix Filtering**: All operations use efficient prefix queries
-- **Batch Processing**: Configurable chunk sizes (default: 20 records)
-- **CPU Safety**: Max 8ms execution time per operation
+- **Batch Processing**: Configurable batch sizes for email delivery
+- **CPU Safety**: Optimized for Cloudflare Workers execution limits
 
-### Backup System
-- **Daily Chunks**: Processes incrementally to avoid timeouts
-- **Weekly Merge**: Combines all chunks with deduplication
-- **Auto-Cleanup**: Chunks expire after 7 days via TTL
+### D1 Replication
+- **Async Processing**: Uses ctx.waitUntil() for non-blocking writes
+- **Error Resilient**: Failures don't affect user experience
+- **Append-Only**: No deletes or complex queries
 
 ### Email Delivery
 - **Batch Size**: 100 emails per batch
@@ -305,20 +296,20 @@ npx wrangler deploy
 
 ## 🔍 Monitoring & Maintenance
 
-### Health Check Endpoint
-```bash
-curl https://your-worker.workers.dev/health
-```
-
 ### Admin Panel
 ```
 https://your-worker.workers.dev/admin
 ```
 
+### Status Endpoint
+```
+https://your-worker.workers.dev/admin/status
+```
+
 ### Automatic Maintenance
-- **Daily**: Backup chunk collection
-- **Saturday**: Full backup upload + cleanup
-- **Continuous**: TTL-based expiration
+- **Hourly**: Newsletter feed checking
+- **Continuous**: TTL-based expiration for temporary data
+- **Real-time**: Async D1 replication on form submissions
 
 ## 📝 API Endpoints
 
@@ -329,17 +320,14 @@ https://your-worker.workers.dev/admin
 | `/subscribe` | GET/POST | Newsletter subscription |
 | `/unsubscribe` | GET/POST | Newsletter unsubscription |
 | `/contact` | GET/POST | Contact form |
-| `/health` | GET | System health check |
+| `/robots.txt` | GET | Robots.txt file |
 
 ### Protected Admin Endpoints
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/admin` | GET | Admin panel (Turnstile) |
 | `/admin/status` | GET | System status |
-| `/admin/debug` | GET | Debug information |
 | `/admin/api/check-now` | POST | Trigger newsletter check |
-| `/admin/api/maintenance` | POST | Run maintenance |
-| `/admin/api/backup` | POST | Trigger backup |
 
 ## 🤝 Contributing
 
@@ -358,7 +346,7 @@ This project is licensed under the MIT License.
 - Cloudflare Workers platform
 - worker-mailer library for SMTP support
 - MailerLite API
-- GitHub API for backups
+- Cloudflare D1 Database
 
 ## 📞 Support
 
@@ -366,6 +354,6 @@ For issues and questions, please create an issue in the GitHub repository.
 
 ---
 
-**Version**: 3.0.0
+**Version**: 2.0.0
 **Status**: Production Ready
 **Last Updated**: November 2024

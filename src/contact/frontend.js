@@ -5,7 +5,6 @@
 import { validateEmail, validatePhone, validateRequired, getClientIp, sanitizeHtml } from '../utils/validation.js';
 import { checkRateLimit, verifyTurnstile, storeContact, addSubscriber } from '../utils/kv.js';
 import { checkNativeFormRateLimit } from '../utils/nativeRateLimit.js';
-import { saveContactToGitHub } from '../utils/github.js';
 import { EmailFactory } from '../email/emailFactory.js';
 import { replicateContactToD1, replicateSubscriberToD1 } from '../utils/d1Replication.js';
 
@@ -107,7 +106,7 @@ async function processContactForm(request, env, config, ctx) {
         return jsonResponse({ error: 'Verification token required' }, 400, config);
       }
 
-      const isValid = await verifyTurnstile(token, clientIp, config.TURNSTILE_SECRET_KEY);
+      const isValid = await verifyTurnstile(token, clientIp, config.TURNSTILE_SECRET_KEY, config.TURNSTILE_VERIFY_URL);
       if (!isValid) {
         return jsonResponse({ error: 'Verification failed. Please try again.' }, 400, config);
       }
@@ -163,16 +162,7 @@ async function processContactForm(request, env, config, ctx) {
       console.error('D1 contact replication error (non-blocking):', error);
     }
 
-    // Save to GitHub - wrapped in try-catch
-    try {
-      const githubResult = await saveContactToGitHub(config, contactData);
-      if (!githubResult.success) {
-        console.error('Failed to save to GitHub:', githubResult.error);
-      }
-    } catch (error) {
-      console.error('GitHub save error:', error);
-      // Continue anyway - form submission should not fail due to GitHub
-    }
+    // Data is automatically saved in D1 database - no GitHub backup needed
 
     // Send email notifications with retry
     try {
@@ -426,7 +416,7 @@ function getContactFormHTML(config) {
             }
         }
     </style>
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <script src="${config.TURNSTILE_API_URL || 'https://challenges.cloudflare.com/turnstile/v0/api.js'}" async defer></script>
 </head>
 <body>
     <div class="container">

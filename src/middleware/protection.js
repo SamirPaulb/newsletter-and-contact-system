@@ -242,7 +242,7 @@ function showTurnstileChallenge(config) {
             margin: 30px 0;
         }
     </style>
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <script src="${config.TURNSTILE_API_URL || 'https://challenges.cloudflare.com/turnstile/v0/api.js'}" async defer></script>
 </head>
 <body>
     <div class="container">
@@ -293,7 +293,10 @@ export async function verifyTurnstileToken(request, config) {
   const clientIp = request.headers.get('cf-connecting-ip') || 'unknown';
 
   try {
-    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    // Use URL from config or fall back to default
+    const url = config.TURNSTILE_VERIFY_URL || 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

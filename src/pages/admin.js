@@ -212,7 +212,7 @@ export function renderAdminPanel(config, isAuthenticated = false) {
                 <h2>⚙️ Operations</h2>
 
                 <div class="admin-card" onclick="if(confirm('This will trigger an immediate newsletter check. Continue?')) {
-                    fetch('/admin/api/check-now', {method: 'POST'})
+                    fetch('/admin/api/check-now', {method: 'POST', credentials: 'same-origin'})
                         .then(r => r.json())
                         .then(d => { alert('Newsletter check completed!'); console.log(d); })
                         .catch(e => alert('Error: ' + e));
@@ -223,77 +223,10 @@ export function renderAdminPanel(config, isAuthenticated = false) {
                     <div class="endpoint">POST /admin/api/check-now</div>
                 </div>
 
-                <div class="admin-card" onclick="if(confirm('This will run maintenance tasks including cleanup and backup. Continue?')) {
-                    fetch('/admin/api/maintenance', {method: 'POST'})
-                        .then(r => r.json())
-                        .then(d => { alert('Maintenance completed! Check console for details.'); console.log(d); })
-                        .catch(e => alert('Error: ' + e));
-                }">
-                    <div class="icon">🔧</div>
-                    <h3>Run Maintenance</h3>
-                    <p>Execute cleanup and backup tasks</p>
-                    <div class="endpoint">POST /admin/api/maintenance</div>
-                </div>
             </div>
 
-            <!-- Data Management Section -->
-            <div class="admin-section">
-                <h2>💾 Data Management</h2>
-
-                <div class="admin-card" onclick="if(confirm('This will backup all data to GitHub. Continue?')) {
-                    fetch('/admin/api/backup', {method: 'POST'})
-                        .then(r => r.json())
-                        .then(d => { alert('Backup completed!'); console.log(d); })
-                        .catch(e => alert('Error: ' + e));
-                }">
-                    <div class="icon">💾</div>
-                    <h3>Backup Data</h3>
-                    <p>Backup all KV data to GitHub</p>
-                    <div class="endpoint">POST /admin/api/backup</div>
-                </div>
-
-                <div class="admin-card" onclick="if(confirm('This will clean up expired entries. Continue?')) {
-                    fetch('/admin/api/cleanup', {method: 'POST'})
-                        .then(r => r.json())
-                        .then(d => { alert('Cleanup completed!'); console.log(d); })
-                        .catch(e => alert('Error: ' + e));
-                }">
-                    <div class="icon">🧹</div>
-                    <h3>Cleanup Data</h3>
-                    <p>Remove expired KV entries</p>
-                    <div class="endpoint">POST /admin/api/cleanup</div>
-                </div>
-
-                <div class="admin-card" onclick="if(confirm('This will backup D1 database to GitHub. This may take multiple runs due to CPU limits. Continue?')) {
-                    fetch('/admin/api/d1-backup', {method: 'POST'})
-                        .then(r => r.json())
-                        .then(d => {
-                            if (d.result && d.result.continueNextCron) {
-                                alert('D1 backup in progress. Will continue in next cron run.');
-                            } else {
-                                alert('D1 backup initiated!');
-                            }
-                            console.log(d);
-                            // Check status
-                            return fetch('/admin/api/d1-backup-status');
-                        })
-                        .then(r => r.json())
-                        .then(status => {
-                            console.log('Backup status:', status);
-                            if (status.status && status.status.inProgress) {
-                                alert('Backup is in progress. Subscribers: ' +
-                                      status.status.subscribers.processed + '/' + status.status.subscribers.total +
-                                      ', Contacts: ' + status.status.contacts.processed + '/' + status.status.contacts.total);
-                            }
-                        })
-                        .catch(e => alert('Error: ' + e));
-                }">
-                    <div class="icon">🗄️</div>
-                    <h3>Backup D1 Database</h3>
-                    <p>Export D1 to SQL and upload to GitHub</p>
-                    <div class="endpoint">POST /admin/api/d1-backup</div>
-                </div>
-            </div>
+            <!-- Data is automatically stored in D1 database and TTL handles cleanup automatically -->
+            <!-- Data Management section removed as backups and cleanup are now automatic -->
         </div>
 
         <div class="admin-section" style="text-align: center;">

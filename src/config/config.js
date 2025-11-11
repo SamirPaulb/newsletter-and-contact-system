@@ -9,7 +9,7 @@ function withColon(p) {
 
 export function buildConfig(env) {
   // Email Provider Configuration
-  let EMAIL_PROVIDER = 'gmail'; // 'gmail' or 'worker-email'
+  let EMAIL_PROVIDER = '';
   if (env && env.EMAIL_PROVIDER) EMAIL_PROVIDER = String(env.EMAIL_PROVIDER).toLowerCase();
 
   // Gmail Configuration (for worker-mailer)
@@ -19,11 +19,11 @@ export function buildConfig(env) {
   let GMAIL_PASSWORD = '';
   if (env && env.GMAIL_PASSWORD) GMAIL_PASSWORD = String(env.GMAIL_PASSWORD);
 
-  let GMAIL_HOST = 'smtp.gmail.com';
+  let GMAIL_HOST = '';
   if (env && env.GMAIL_HOST) GMAIL_HOST = String(env.GMAIL_HOST);
 
-  let GMAIL_PORT = 587;
-  if (env && env.GMAIL_PORT) GMAIL_PORT = parseInt(String(env.GMAIL_PORT), 10) || 587;
+  let GMAIL_PORT = 0;
+  if (env && env.GMAIL_PORT) GMAIL_PORT = parseInt(String(env.GMAIL_PORT), 10);
 
   // Worker Email Configuration
   let WORKER_EMAIL_FROM = '';
@@ -36,7 +36,7 @@ export function buildConfig(env) {
   let MAILERLITE_API_TOKEN = '';
   if (env && env.MAILERLITE_API_TOKEN) MAILERLITE_API_TOKEN = String(env.MAILERLITE_API_TOKEN);
 
-  let MAILERLITE_API_URL = 'https://connect.mailerlite.com/api';
+  let MAILERLITE_API_URL = '';
   if (env && env.MAILERLITE_API_URL) MAILERLITE_API_URL = String(env.MAILERLITE_API_URL);
 
   let MAILERLITE_FROM_EMAIL = '';
@@ -55,7 +55,7 @@ export function buildConfig(env) {
   if (env && env.MAILERLITE_RATE_LIMIT) MAILERLITE_RATE_LIMIT = parseInt(String(env.MAILERLITE_RATE_LIMIT), 10) || 120;
 
   // Common Email Configuration
-  let EMAIL_FROM_NAME = 'Newsletter';
+  let EMAIL_FROM_NAME = '';
   if (env && env.EMAIL_FROM_NAME) EMAIL_FROM_NAME = String(env.EMAIL_FROM_NAME);
 
   let EMAIL_FROM_ADDRESS = '';
@@ -68,7 +68,7 @@ export function buildConfig(env) {
   let RSS_FEED_URL = '';
   if (env && env.RSS_FEED_URL) RSS_FEED_URL = String(env.RSS_FEED_URL);
 
-  let USER_AGENT = 'Newsletter-Bot/2.0';
+  let USER_AGENT = '';
   if (env && env.USER_AGENT) USER_AGENT = String(env.USER_AGENT);
 
   let FETCH_TIMEOUT_MS = 60000;
@@ -84,34 +84,7 @@ export function buildConfig(env) {
   let MAX_POSTS_PER_RUN = 1;
   if (env && env.MAX_POSTS_PER_RUN) MAX_POSTS_PER_RUN = parseInt(String(env.MAX_POSTS_PER_RUN), 10) || 1;
 
-  // GitHub Configuration for Backups
-  let GITHUB_OWNER = '';
-  if (env && env.GITHUB_OWNER) GITHUB_OWNER = String(env.GITHUB_OWNER);
-
-  let GITHUB_BACKUP_REPO = '';
-  if (env && env.GITHUB_BACKUP_REPO) GITHUB_BACKUP_REPO = String(env.GITHUB_BACKUP_REPO);
-
-  let GITHUB_BACKUP_BRANCH = 'main';
-  if (env && env.GITHUB_BACKUP_BRANCH) GITHUB_BACKUP_BRANCH = String(env.GITHUB_BACKUP_BRANCH);
-
-  let GITHUB_TOKEN = '';
-  if (env && env.GITHUB_TOKEN) GITHUB_TOKEN = String(env.GITHUB_TOKEN);
-
-  let GITHUB_SUBSCRIBER_BACKUP_PATH = 'cloudflare-workers-kv-subscriber-backup.csv';
-  if (env && env.GITHUB_SUBSCRIBER_BACKUP_PATH) GITHUB_SUBSCRIBER_BACKUP_PATH = String(env.GITHUB_SUBSCRIBER_BACKUP_PATH);
-
-  let GITHUB_CONTACT_BACKUP_PATH = 'cloudflare-workers-kv-contact-backup.csv';
-  if (env && env.GITHUB_CONTACT_BACKUP_PATH) GITHUB_CONTACT_BACKUP_PATH = String(env.GITHUB_CONTACT_BACKUP_PATH);
-
-  // Contact Form GitHub Configuration
-  let GITHUB_CONTACT_REPO = '';
-  if (env && env.GITHUB_CONTACT_REPO) GITHUB_CONTACT_REPO = String(env.GITHUB_CONTACT_REPO);
-
-  let GITHUB_CONTACT_BRANCH = 'main';
-  if (env && env.GITHUB_CONTACT_BRANCH) GITHUB_CONTACT_BRANCH = String(env.GITHUB_CONTACT_BRANCH);
-
-  let GITHUB_CONTACT_PATH = '';
-  if (env && env.GITHUB_CONTACT_PATH) GITHUB_CONTACT_PATH = String(env.GITHUB_CONTACT_PATH);
+  // GitHub backup removed - Data is permanently stored in D1 database
 
   // Cron Configuration
   let WEEKLY_CRON = '0 0 * * sat';
@@ -266,24 +239,24 @@ export function buildConfig(env) {
   if (env && env.CONTACT_API_PATH) CONTACT_API_PATH = String(env.CONTACT_API_PATH);
 
   // Site Configuration
-  let SITE_URL = 'https://samirpaulb.github.io';
+  let SITE_URL = '';
   if (env && env.SITE_URL) SITE_URL = String(env.SITE_URL);
 
-  let UNSUBSCRIBE_URL = 'https://samirpaulb.github.io/unsubscribe-newsletter/';
+  let UNSUBSCRIBE_URL = '';
   if (env && env.UNSUBSCRIBE_URL) UNSUBSCRIBE_URL = String(env.UNSUBSCRIBE_URL);
 
-  let SITE_OWNER = 'Samir P.';
+  let SITE_OWNER = '';
   if (env && env.SITE_OWNER) SITE_OWNER = String(env.SITE_OWNER);
 
   // GitHub Repo URL
-  let GITHUB_REPO_URL = 'https://github.com/SamirPaulb/newsletter-and-contact-system';
+  let GITHUB_REPO_URL = '';
   if (env && env.GITHUB_REPO_URL) GITHUB_REPO_URL = String(env.GITHUB_REPO_URL);
 
   // Turnstile URLs
-  let TURNSTILE_API_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+  let TURNSTILE_API_URL = '';
   if (env && env.TURNSTILE_API_URL) TURNSTILE_API_URL = String(env.TURNSTILE_API_URL);
 
-  let TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+  let TURNSTILE_VERIFY_URL = '';
   if (env && env.TURNSTILE_VERIFY_URL) TURNSTILE_VERIFY_URL = String(env.TURNSTILE_VERIFY_URL);
 
   // Retry Configuration
@@ -353,16 +326,7 @@ export function buildConfig(env) {
     BATCH_WAIT_MINUTES,
     MAX_POSTS_PER_RUN,
 
-    // GitHub
-    GITHUB_OWNER,
-    GITHUB_BACKUP_REPO,
-    GITHUB_BACKUP_BRANCH,
-    GITHUB_TOKEN,
-    GITHUB_SUBSCRIBER_BACKUP_PATH,
-    GITHUB_CONTACT_BACKUP_PATH,
-    GITHUB_CONTACT_REPO,
-    GITHUB_CONTACT_BRANCH,
-    GITHUB_CONTACT_PATH,
+    // GitHub backup removed - Data stored in D1
 
     // Cron
     WEEKLY_CRON,
@@ -473,7 +437,6 @@ export function isConfigValid(config) {
 
   // Check required configurations
   if (!config.RSS_FEED_URL) errors.push('RSS_FEED_URL is required');
-  if (!config.GITHUB_TOKEN) errors.push('GITHUB_TOKEN is required');
   if (!config.TURNSTILE_SITE_KEY) errors.push('TURNSTILE_SITE_KEY is required');
   if (!config.TURNSTILE_SECRET_KEY) errors.push('TURNSTILE_SECRET_KEY is required');
   // ADMIN_TOKEN is now optional - API access is disabled for maximum security

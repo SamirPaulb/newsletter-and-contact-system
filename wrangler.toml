@@ -6,9 +6,7 @@ workers_dev = true
 
 [triggers]
 crons = [
-  "0 0 * * sun,mon,tue,wed,thu,fri,sat",  # Daily at 00:00 UTC (KV backups)
-  "0 0 * * sat",                           # Weekly at 00:00 UTC on Saturday (maintenance)
-  "0 12 * * wed"                           # Weekly at 12:00 UTC on Wednesday (D1 backup)
+  "0 * * * *"  # Every hour for newsletter checks
 ]
 
 [[kv_namespaces]]
@@ -37,22 +35,20 @@ RSS_FEED_URL = "https://samirpaulb.github.io/index.xml"
 USER_AGENT = "Newsletter-Bot/2.0"
 FETCH_TIMEOUT_MS = 60000
 
-# Batching and Pacing (reduced for direct SMTP)
-BATCH_SIZE = 100
-BATCH_WAIT_MINUTES = 5
-MAX_POSTS_PER_RUN = 1
+# Gmail Rate Limiting Configuration
+# Gmail has a daily limit of 500 emails for regular accounts, 2000 for Google Workspace
+# We'll use 490 to leave some buffer for manual emails
+GMAIL_DAILY_LIMIT = 490
+GMAIL_PER_MINUTE_LIMIT = 20  # Gmail has a per-minute rate limit
 
-# GitHub Configuration for Backups
-GITHUB_OWNER = "SamirPaulb"  # Your GitHub username
-GITHUB_BACKUP_REPO = "database-backup"  # Repository for KV backups (make sure it's private)
-GITHUB_BACKUP_BRANCH = "main"
-GITHUB_SUBSCRIBER_BACKUP_PATH = "cloudflare-workers-kv-subscriber-backup.csv"
-GITHUB_CONTACT_BACKUP_PATH = "cloudflare-workers-kv-contact-backup.csv"
+# Batching and Pacing (optimized for Gmail limits)
+# With 50 recipients per email (using BCC), we can send to 2450 recipients with 49 emails
+# To stay under 490 daily limit, we batch carefully
+BATCH_SIZE = 50  # Recipients per batch (matches Gmail BCC limit)
+BATCH_WAIT_MINUTES = 3  # Wait between batches to respect per-minute limits
+MAX_POSTS_PER_RUN = 1  # Process one newsletter at a time
 
-# Contact Form GitHub Configuration
-GITHUB_CONTACT_REPO = "database-backup"
-GITHUB_CONTACT_BRANCH = "main"
-GITHUB_CONTACT_PATH = "cloudflare-workers-kv-contact.json"
+# GitHub backup removed - Data is permanently stored in D1 database
 
 # Cron Configuration
 WEEKLY_CRON = "0 0 * * sat"
@@ -169,20 +165,19 @@ persist = true
 # Required for all providers:
 # 1. EMAIL_FROM_ADDRESS - From email address
 # 2. EMAIL_REPLY_TO - Reply-to email address (optional)
-# 3. GITHUB_TOKEN - GitHub personal access token with repo write access
-# 4. TURNSTILE_SITE_KEY - Cloudflare Turnstile site key
-# 5. TURNSTILE_SECRET_KEY - Cloudflare Turnstile secret key
-# 6. ADMIN_TOKEN - (OPTIONAL - API access disabled for maximum security)
+# 3. TURNSTILE_SITE_KEY - Cloudflare Turnstile site key
+# 4. TURNSTILE_SECRET_KEY - Cloudflare Turnstile secret key
+# 5. ADMIN_TOKEN - (OPTIONAL - API access disabled for maximum security)
 #
 # For Gmail provider:
-# 7. GMAIL_USER - Gmail address for SMTP authentication
-# 8. GMAIL_PASSWORD - Gmail App Password (not regular password)
+# 6. GMAIL_USER - Gmail address for SMTP authentication
+# 7. GMAIL_PASSWORD - Gmail App Password (not regular password)
 #
 # For Worker Email provider:
-# 9. WORKER_EMAIL_FROM - Email address for worker-email provider
+# 8. WORKER_EMAIL_FROM - Email address for worker-email provider
 #
 # For MailerLite provider:
-# 10. MAILERLITE_API_TOKEN - MailerLite API token
+# 9. MAILERLITE_API_TOKEN - MailerLite API token
 #
 # To set secrets, use:
 # wrangler secret put SECRET_NAME

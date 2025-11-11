@@ -6,6 +6,7 @@ import { WorkerMailer } from 'worker-mailer';
 import { withRetry, CircuitBreaker } from '../utils/retry.js';
 import { isValidEmail } from '../utils/validation.js';
 import { sanitizeInput } from '../utils/sanitize.js';
+import { canSendEmails, trackEmailSent } from '../utils/gmailRateLimit.js';
 
 export class GmailProvider {
   constructor(config) {

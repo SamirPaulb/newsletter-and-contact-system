@@ -88,7 +88,7 @@ async function discoverFromRssAndQueue(env, config) {
       return;
     }
 
-    console.log(`Found ${subscribers.length} subscriber(s)`);
+    console.log(`Processing ${subscribers.length} subscriber(s)`);
 
     // Fetch feed with retry logic
     const fetchResult = await resilientFetch(config.RSS_FEED_URL, {

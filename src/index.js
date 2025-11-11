@@ -13,10 +13,7 @@ import { handleSubscribe } from './newsletter/frontend/subscribe.js';
 import { handleUnsubscribe } from './newsletter/frontend/unsubscribe.js';
 import { dailyRun } from './newsletter/backend/processor.js';
 import { handleContact } from './contact/frontend.js';
-import { runCleanup, getMaintenanceStatus } from './maintenance/cleanup.js';
-import { runDailyBackupChunk, mergeAndUploadBackups, runCleanup as runWeeklyCleanup } from './maintenance/incremental.js';
-import { backupD1ToGitHub } from './maintenance/d1Backup.js';
-import { backupD1ToGitHubChunked, getD1BackupStatus } from './maintenance/d1BackupChunked.js';
+// Cleanup and backup imports removed - TTL handles cleanup and D1 handles persistence
 import { protectRequest, verifyTurnstileToken } from './middleware/protection.js';
 import { handleStatus } from './pages/status.js';
 import { handleAdminPanel } from './pages/admin.js';
@@ -246,368 +243,10 @@ Sitemap:`, {
       });
     }
 
-    if (url.pathname === '/admin/api/maintenance' && request.method === 'POST') {
-      // SECURITY: Only allow session-based access from admin panel
-      const cookieHeader = request.headers.get('cookie') || '';
-      const hasValidSession = cookieHeader.includes('admin_session=');
+    // Maintenance and cleanup endpoints removed - TTL handles cleanup automatically
 
-      if (!hasValidSession) {
-        return new Response(JSON.stringify({ error: 'Unauthorized. Access only allowed from admin panel.' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
+    // D1 Backup endpoint removed - D1 database handles backups automatically
 
-      // FIRST: Check native admin rate limit
-      const endpoint = url.pathname.split('/').pop(); // Get the endpoint name
-      const nativeCheck = await checkNativeAdminRateLimit(request, env, endpoint);
-      if (!nativeCheck.allowed) {
-        return new Response(JSON.stringify({
-          error: nativeCheck.reason || 'Admin API rate limit exceeded',
-          message: 'Please wait before making another request',
-          retryAfter: 60
-        }), {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': '60'
-          }
-        });
-      }
-
-      // SECOND: Check KV-based admin API rate limit (more restrictive)
-      const rateLimitCheck = await checkAdminApiRateLimit(request, env, config);
-      if (!rateLimitCheck.allowed) {
-        return new Response(JSON.stringify({
-          error: 'Rate limit exceeded',
-          message: rateLimitCheck.message,
-          remaining: rateLimitCheck.remaining,
-          resetAt: rateLimitCheck.resetAt
-        }), {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
-            'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
-            'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
-          }
-        });
-      }
-
-      console.log('Manual maintenance triggered via admin API');
-
-      // Run full maintenance
-      const cleanupResult = await runCleanup(env, config);
-
-      // Run incremental backup - first collect chunks then merge and upload
-      const chunkResult = await runDailyBackupChunk(env, config);
-      const backupResult = await mergeAndUploadBackups(env, config);
-
-      // Sanitize backup result to only include counts, no actual data
-      const sanitizedBackup = {
-        chunk: {
-          success: chunkResult.complete || false,
-          count: chunkResult.count || 0
-        },
-        upload: {
-          subscribers: {
-            success: backupResult.subscribers.success,
-            count: backupResult.subscribers.count,
-            error: backupResult.subscribers.error ? 'Failed' : null
-          },
-          contacts: {
-            success: backupResult.contacts.success,
-            count: backupResult.contacts.count,
-            error: backupResult.contacts.error ? 'Failed' : null
-          }
-        }
-      };
-
-      return new Response(JSON.stringify({
-        success: true,
-        message: 'Maintenance completed',
-        cleanup: cleanupResult,
-        backup: sanitizedBackup,
-        timestamp: new Date().toISOString(),
-        rateLimit: {
-          remaining: rateLimitCheck.remaining,
-          resetAt: rateLimitCheck.resetAt
-        }
-      }), {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
-          'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
-          'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
-        }
-      });
-    }
-
-    if (url.pathname === '/admin/api/backup' && request.method === 'POST') {
-      // SECURITY: Only allow session-based access from admin panel
-      const cookieHeader = request.headers.get('cookie') || '';
-      const hasValidSession = cookieHeader.includes('admin_session=');
-
-      if (!hasValidSession) {
-        return new Response(JSON.stringify({ error: 'Unauthorized. Access only allowed from admin panel.' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      // FIRST: Check native admin rate limit
-      const endpoint = url.pathname.split('/').pop(); // Get the endpoint name
-      const nativeCheck = await checkNativeAdminRateLimit(request, env, endpoint);
-      if (!nativeCheck.allowed) {
-        return new Response(JSON.stringify({
-          error: nativeCheck.reason || 'Admin API rate limit exceeded',
-          message: 'Please wait before making another request',
-          retryAfter: 60
-        }), {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': '60'
-          }
-        });
-      }
-
-      // SECOND: Check KV-based admin API rate limit (more restrictive)
-      const rateLimitCheck = await checkAdminApiRateLimit(request, env, config);
-      if (!rateLimitCheck.allowed) {
-        return new Response(JSON.stringify({
-          error: 'Rate limit exceeded',
-          message: rateLimitCheck.message,
-          remaining: rateLimitCheck.remaining,
-          resetAt: rateLimitCheck.resetAt
-        }), {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
-            'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
-            'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
-          }
-        });
-      }
-
-      console.log('Manual backup triggered via admin API');
-
-      // Run incremental backup - first collect chunks then merge and upload
-      const chunkResult = await runDailyBackupChunk(env, config);
-      const result = await mergeAndUploadBackups(env, config);
-
-      // Only return counts and status, no actual data
-      const sanitizedResult = {
-        chunk: {
-          success: chunkResult.complete || false,
-          count: chunkResult.count || 0
-        },
-        upload: {
-          subscribers: {
-            success: result.subscribers.success,
-            count: result.subscribers.count,
-            error: result.subscribers.error ? 'Failed' : null
-          },
-          contacts: {
-            success: result.contacts.success,
-            count: result.contacts.count,
-            error: result.contacts.error ? 'Failed' : null
-          }
-        }
-      };
-
-      return new Response(JSON.stringify({
-        success: true,
-        message: 'Backup completed',
-        result: sanitizedResult,
-        timestamp: new Date().toISOString(),
-        rateLimit: {
-          remaining: rateLimitCheck.remaining,
-          resetAt: rateLimitCheck.resetAt
-        }
-      }), {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
-          'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
-          'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
-        }
-      });
-    }
-
-    if (url.pathname === '/admin/api/cleanup' && request.method === 'POST') {
-      // SECURITY: Only allow session-based access from admin panel
-      const cookieHeader = request.headers.get('cookie') || '';
-      const hasValidSession = cookieHeader.includes('admin_session=');
-
-      if (!hasValidSession) {
-        return new Response(JSON.stringify({ error: 'Unauthorized. Access only allowed from admin panel.' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      // FIRST: Check native admin rate limit
-      const endpoint = url.pathname.split('/').pop(); // Get the endpoint name
-      const nativeCheck = await checkNativeAdminRateLimit(request, env, endpoint);
-      if (!nativeCheck.allowed) {
-        return new Response(JSON.stringify({
-          error: nativeCheck.reason || 'Admin API rate limit exceeded',
-          message: 'Please wait before making another request',
-          retryAfter: 60
-        }), {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': '60'
-          }
-        });
-      }
-
-      // SECOND: Check KV-based admin API rate limit (more restrictive)
-      const rateLimitCheck = await checkAdminApiRateLimit(request, env, config);
-      if (!rateLimitCheck.allowed) {
-        return new Response(JSON.stringify({
-          error: 'Rate limit exceeded',
-          message: rateLimitCheck.message,
-          remaining: rateLimitCheck.remaining,
-          resetAt: rateLimitCheck.resetAt
-        }), {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
-            'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
-            'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
-          }
-        });
-      }
-
-      console.log('Manual cleanup triggered via admin API');
-      const result = await runCleanup(env, config);
-      return new Response(JSON.stringify({
-        success: true,
-        message: 'Cleanup completed',
-        result,
-        timestamp: new Date().toISOString(),
-        rateLimit: {
-          remaining: rateLimitCheck.remaining,
-          resetAt: rateLimitCheck.resetAt
-        }
-      }), {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
-          'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
-          'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
-        }
-      });
-    }
-
-    // D1 Backup endpoint - trigger manual D1 database backup
-    if (url.pathname === '/admin/api/d1-backup' && request.method === 'POST') {
-      // SECURITY: Only allow session-based access from admin panel
-      const cookieHeader = request.headers.get('cookie') || '';
-      const hasValidSession = cookieHeader.includes('admin_session=');
-
-      if (!hasValidSession) {
-        return new Response(JSON.stringify({ error: 'Unauthorized. Access only allowed from admin panel.' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      // FIRST: Check native admin rate limit
-      const endpoint = url.pathname.split('/').pop(); // Get the endpoint name
-      const nativeCheck = await checkNativeAdminRateLimit(request, env, endpoint);
-      if (!nativeCheck.allowed) {
-        return new Response(JSON.stringify({
-          error: nativeCheck.reason || 'Admin API rate limit exceeded',
-          message: 'Please wait before making another request',
-          retryAfter: 60
-        }), {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': '60'
-          }
-        });
-      }
-
-      // SECOND: Check KV-based admin API rate limit (more restrictive)
-      const rateLimitCheck = await checkAdminApiRateLimit(request, env, config);
-      if (!rateLimitCheck.allowed) {
-        return new Response(JSON.stringify({
-          error: 'Rate limit exceeded',
-          message: rateLimitCheck.message,
-          remaining: rateLimitCheck.remaining,
-          resetAt: rateLimitCheck.resetAt
-        }), {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
-            'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
-            'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
-          }
-        });
-      }
-
-      console.log('Manual D1 backup triggered via admin API');
-
-      // Use chunked backup for free plan CPU limits
-      const result = await backupD1ToGitHubChunked(env, config);
-
-      // Sanitize result - never expose actual data
-      const sanitizedResult = {
-        success: result.success,
-        message: result.message,
-        continueNextCron: result.continueNextCron || false
-      };
-
-      return new Response(JSON.stringify({
-        success: result.success,
-        message: 'D1 backup process initiated',
-        result: sanitizedResult,
-        timestamp: new Date().toISOString(),
-        rateLimit: {
-          remaining: rateLimitCheck.remaining,
-          resetAt: rateLimitCheck.resetAt
-        }
-      }), {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-RateLimit-Limit': String(config.ADMIN_API_RATE_LIMIT_MAX),
-          'X-RateLimit-Remaining': String(rateLimitCheck.remaining),
-          'X-RateLimit-Reset': rateLimitCheck.resetAt.toISOString()
-        }
-      });
-    }
-
-    // D1 Backup Status endpoint - check D1 backup progress
-    if (url.pathname === '/admin/api/d1-backup-status' && request.method === 'GET') {
-      // SECURITY: Only allow session-based access from admin panel
-      const cookieHeader = request.headers.get('cookie') || '';
-      const hasValidSession = cookieHeader.includes('admin_session=');
-
-      if (!hasValidSession) {
-        return new Response(JSON.stringify({ error: 'Unauthorized. Access only allowed from admin panel.' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      const status = await getD1BackupStatus(env);
-
-      return new Response(JSON.stringify({
-        success: true,
-        status: status,
-        timestamp: new Date().toISOString()
-      }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
 
     // Admin pages (require authentication)
     if (url.pathname === '/admin/status') {
@@ -741,8 +380,6 @@ Sitemap:`, {
         },
         configuration: {
           RSS_FEED_URL: !!config.RSS_FEED_URL,
-          GITHUB_OWNER: config.GITHUB_OWNER,
-          GITHUB_BACKUP_REPO: config.GITHUB_BACKUP_REPO,
           BATCH_SIZE: config.BATCH_SIZE,
           BATCH_WAIT_MINUTES: config.BATCH_WAIT_MINUTES,
           MAX_POSTS_PER_RUN: config.MAX_POSTS_PER_RUN
@@ -761,7 +398,6 @@ Sitemap:`, {
         secrets: {
           GMAIL_USER: !!config.GMAIL_USER,
           GMAIL_PASSWORD: !!config.GMAIL_PASSWORD,
-          GITHUB_TOKEN: !!config.GITHUB_TOKEN,
           TURNSTILE_SITE_KEY: !!config.TURNSTILE_SITE_KEY,
           TURNSTILE_SECRET_KEY: !!config.TURNSTILE_SECRET_KEY
         },
@@ -947,16 +583,6 @@ Sitemap:`, {
       });
     }
 
-    // Health check
-    if (url.pathname === '/health') {
-      return new Response(JSON.stringify({
-        status: 'healthy',
-        timestamp: new Date().toISOString()
-      }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
     // Default home page
     if (url.pathname === '/') {
       return new Response(getHomePage(config), {
@@ -973,13 +599,12 @@ Sitemap:`, {
   } catch (error) {
     console.error('Request handler error:', error);
     return new Response(JSON.stringify({
-      error: 'Internal Server Error',
-      message: error.message
+      error: 'Internal Server Error'
+      // Never expose error details in production
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
-  }
 }
 
 /**
@@ -992,50 +617,8 @@ async function handleScheduled(event, env, ctx) {
     console.log('Cron triggered: ' + event.cron);
 
     const now = new Date();
-    const dayOfWeek = now.getUTCDay(); // 0 = Sunday, 6 = Saturday
-    const hour = now.getUTCHours();
 
-    // Check if it's Wednesday at noon UTC for D1 backup
-    if (dayOfWeek === 3 && hour === 12) {
-      console.log('Wednesday noon - Running D1 database backup to GitHub');
-      // Use chunked backup for CPU-safe operation on free plan
-      const d1BackupResult = await backupD1ToGitHubChunked(env, config);
-      console.log('D1 backup result:', d1BackupResult);
-
-      // Store last D1 backup status
-      await env.KV.put('d1:last-backup', JSON.stringify({
-        timestamp: new Date().toISOString(),
-        result: d1BackupResult
-      }));
-    }
-
-    // Check if it's Saturday (weekly maintenance day)
-    if (dayOfWeek === 6) {
-      console.log('Saturday - Running weekly maintenance sequence');
-
-      // 1. First run daily backup chunk collection
-      console.log('Step 1: Daily backup chunk collection');
-      const dailyBackupResult = await runDailyBackupChunk(env, config);
-      console.log('Daily backup chunk result:', dailyBackupResult);
-
-      // 2. Then merge chunks and upload to GitHub
-      console.log('Step 2: Merging and uploading weekly backup');
-      const weeklyBackupResult = await mergeAndUploadBackups(env, config);
-      console.log('Weekly backup result:', weeklyBackupResult);
-
-      // 3. Finally run cleanup
-      console.log('Step 3: Running weekly cleanup');
-      const cleanupResult = await runWeeklyCleanup(env, config);
-      console.log('Weekly cleanup result:', cleanupResult);
-
-    } else {
-      // Regular daily run - just collect backup chunks
-      console.log('Daily backup chunk collection');
-      const dailyBackupResult = await runDailyBackupChunk(env, config);
-      console.log('Daily backup chunk result:', dailyBackupResult);
-    }
-
-    // Also check for newsletters (lightweight)
+    // Check for newsletters (lightweight)
     const lastNewsletterCheck = await env.KV.get(`${config.KEEP_PREFIX_DAILY}lastNewsletterCheck`);
 
     if (!lastNewsletterCheck || (now - new Date(lastNewsletterCheck)) > 60 * 60 * 1000) {
@@ -1203,12 +786,6 @@ function getHomePage(config) {
                 <div class="icon">💬</div>
                 <h3>Contact</h3>
                 <p>Get in touch</p>
-            </a>
-
-            <a href="/health" class="link-card">
-                <div class="icon">📊</div>
-                <h3>Health</h3>
-                <p>System status</p>
             </a>
         </div>
 

@@ -2,7 +2,6 @@
  * Status Page - Protected system status display
  */
 
-import { getMaintenanceStatus } from '../maintenance/cleanup.js';
 import { verifyTurnstile } from '../utils/kv.js';
 
 /**
@@ -34,7 +33,7 @@ export async function handleStatus(request, env, config) {
       const token = formData.get('cf-turnstile-response');
       const clientIp = request.headers.get('cf-connecting-ip') || 'unknown';
 
-      const isValid = await verifyTurnstile(token, clientIp, config.TURNSTILE_SECRET_KEY);
+      const isValid = await verifyTurnstile(token, clientIp, config.TURNSTILE_SECRET_KEY, config.TURNSTILE_VERIFY_URL);
 
       if (isValid) {
         // Set a cookie to remember verification
@@ -42,7 +41,7 @@ export async function handleStatus(request, env, config) {
         return new Response(renderStatusPage(config, statusData, true), {
           headers: {
             'Content-Type': 'text/html; charset=utf-8',
-            'Set-Cookie': `status-verified=true; Max-Age=300; Path=/status; HttpOnly; Secure; SameSite=Strict`
+            'Set-Cookie': `status-verified=true; Max-Age=300; Path=/admin/status; HttpOnly; Secure; SameSite=Strict`
           }
         });
       }
@@ -432,7 +431,7 @@ function renderStatusChallenge(config, errorMessage = '') {
             color: #666;
         }
     </style>
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <script src="${config.TURNSTILE_API_URL || 'https://challenges.cloudflare.com/turnstile/v0/api.js'}" async defer></script>
 </head>
 <body>
     <div class="container">

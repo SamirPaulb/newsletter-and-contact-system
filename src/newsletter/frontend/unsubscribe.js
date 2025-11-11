@@ -91,7 +91,7 @@ async function processUnsubscription(request, env, config) {
         return jsonResponse({ error: 'Verification token required' }, 400, config);
       }
 
-      const isValid = await verifyTurnstile(token, clientIp, config.TURNSTILE_SECRET_KEY);
+      const isValid = await verifyTurnstile(token, clientIp, config.TURNSTILE_SECRET_KEY, config.TURNSTILE_VERIFY_URL);
       if (!isValid) {
         return jsonResponse({ error: 'Verification failed. Please try again.' }, 400, config);
       }
@@ -288,7 +288,7 @@ function getUnsubscribeFormHTML(config) {
             }
         }
     </style>
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <script src="${config.TURNSTILE_API_URL || 'https://challenges.cloudflare.com/turnstile/v0/api.js'}" async defer></script>
 </head>
 <body>
     <div class="container">

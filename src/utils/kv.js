@@ -158,9 +158,12 @@ export async function checkRateLimit(env, config, clientIp) {
 /**
  * Verify Turnstile captcha
  */
-export async function verifyTurnstile(token, clientIp, secretKey) {
+export async function verifyTurnstile(token, clientIp, secretKey, verifyUrl) {
   try {
-    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    // Use provided URL or fall back to Cloudflare's default
+    const url = verifyUrl || 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
