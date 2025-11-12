@@ -195,38 +195,37 @@ persist = true
 [[ratelimits]]
 name = "GLOBAL_RATE_LIMITER"
 namespace_id = "1001"
-# 30 requests per minute per IP (was KV's GLOBAL_RATE_LIMIT_PER_MINUTE)
-simple = { limit = 30, period = 60 }
+# 20 requests per minute per IP (stricter to prevent abuse)
+simple = { limit = 20, period = 60 }
 
 # Form submission rate limiting (subscribe, unsubscribe, contact)
 [[ratelimits]]
 name = "FORM_RATE_LIMITER"
 namespace_id = "1002"
-# 5 requests per hour (based on RATE_LIMIT_MAX = 5 per 24 hours)
-# Using hourly window for better granularity
-simple = { limit = 5, period = 3600 }
+# 2 requests per minute (balanced: prevents spam while allowing legitimate use)
+# This means max 120 form submissions per hour theoretically, realistically 10-20
+simple = { limit = 2, period = 60 }
 
 # Admin API rate limiting
 [[ratelimits]]
 name = "ADMIN_RATE_LIMITER"
 namespace_id = "1003"
-# 5 requests per hour (based on ADMIN_API_RATE_LIMIT_MAX = 5 per 24 hours)
-# Using hourly window for better protection
-simple = { limit = 5, period = 3600 }
+# 2 requests per minute (balanced admin protection)
+simple = { limit = 2, period = 60 }
 
 # Aggressive bot protection - for detected bots/suspicious activity
 [[ratelimits]]
 name = "BOT_RATE_LIMITER"
 namespace_id = "1004"
-# Very strict: 2 requests per minute for suspected bots
-simple = { limit = 2, period = 60 }
+# EXTREMELY strict: 1 request per minute for suspected bots
+simple = { limit = 1, period = 60 }
 
 # Newsletter check rate limiting - for admin check-now endpoint
 [[ratelimits]]
 name = "NEWSLETTER_CHECK_LIMITER"
 namespace_id = "1005"
-# 2 checks per 5 minutes (prevent abuse of RSS checking)
-simple = { limit = 2, period = 300 }
+# 2 checks per minute (prevent abuse while allowing testing)
+simple = { limit = 2, period = 60 }
 
 # Additional rate limiters for comprehensive protection
 
@@ -234,54 +233,12 @@ simple = { limit = 2, period = 300 }
 [[ratelimits]]
 name = "API_RATE_LIMITER"
 namespace_id = "1006"
-# 10 requests per minute for API endpoints
-simple = { limit = 10, period = 60 }
-
-# Static resource rate limiting - for CSS, JS, images
-[[ratelimits]]
-name = "STATIC_RATE_LIMITER"
-namespace_id = "1007"
-# 100 requests per minute for static resources
-simple = { limit = 100, period = 60 }
-
-# Homepage rate limiting
-[[ratelimits]]
-name = "HOME_RATE_LIMITER"
-namespace_id = "1008"
-# 20 requests per minute for homepage
-simple = { limit = 20, period = 60 }
-
-# Status page rate limiting
-[[ratelimits]]
-name = "STATUS_RATE_LIMITER"
-namespace_id = "1009"
-# 5 requests per minute for status page
-simple = { limit = 5, period = 60 }
-
-# Debug endpoint rate limiting
-[[ratelimits]]
-name = "DEBUG_RATE_LIMITER"
-namespace_id = "1010"
-# 3 requests per minute for debug endpoint
+# 3 requests per minute for API endpoints (strict to prevent API abuse)
 simple = { limit = 3, period = 60 }
 
 # Burst protection - very short window
 [[ratelimits]]
 name = "BURST_RATE_LIMITER"
 namespace_id = "1011"
-# 10 requests per 10 seconds (burst protection)
-simple = { limit = 10, period = 10 }
-
-# Daily limit for forms (complementary to hourly)
-[[ratelimits]]
-name = "FORM_DAILY_LIMITER"
-namespace_id = "1012"
-# 5 requests per day (24 hours) matching original RATE_LIMIT_MAX
-simple = { limit = 5, period = 86400 }
-
-# Admin daily limit (complementary to hourly)
-[[ratelimits]]
-name = "ADMIN_DAILY_LIMITER"
-namespace_id = "1013"
-# 5 requests per day (24 hours) matching original ADMIN_API_RATE_LIMIT_MAX
-simple = { limit = 5, period = 86400 }
+# 5 requests per 10 seconds (strict burst protection against automated attacks)
+simple = { limit = 5, period = 10 }

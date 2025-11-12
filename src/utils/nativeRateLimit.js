@@ -239,70 +239,8 @@ export async function checkNativeBurstRateLimit(request, env) {
   }
 }
 
-/**
- * Check daily form rate limit
- * @param {Request} request - The incoming request
- * @param {Object} env - Environment bindings
- * @param {string} formType - Type of form
- * @returns {Promise<{allowed: boolean, reason?: string}>}
- */
-export async function checkNativeFormDailyLimit(request, env, formType) {
-  try {
-    if (!env.FORM_DAILY_LIMITER) {
-      return { allowed: true };
-    }
-
-    const clientIp = getClientIp(request);
-    const key = `${clientIp}:${formType}:daily`;
-
-    const { success } = await env.FORM_DAILY_LIMITER.limit({ key });
-
-    if (!success) {
-      console.log(`Native daily form limit exceeded for ${clientIp} on ${formType}`);
-      return {
-        allowed: false,
-        reason: `Daily limit exceeded for ${formType} submissions. Please try again tomorrow.`
-      };
-    }
-
-    return { allowed: true };
-  } catch (error) {
-    console.error('Native daily form limit check error:', error);
-    return { allowed: true }; // Fail open
-  }
-}
-
-/**
- * Check admin daily rate limit
- * @param {Request} request - The incoming request
- * @param {Object} env - Environment bindings
- * @returns {Promise<{allowed: boolean, reason?: string}>}
- */
-export async function checkNativeAdminDailyLimit(request, env) {
-  try {
-    if (!env.ADMIN_DAILY_LIMITER) {
-      return { allowed: true };
-    }
-
-    const clientIp = getClientIp(request);
-    const key = `${clientIp}:admin:daily`;
-
-    const { success } = await env.ADMIN_DAILY_LIMITER.limit({ key });
-
-    if (!success) {
-      console.log(`Native daily admin limit exceeded for ${clientIp}`);
-      return {
-        allowed: false,
-        reason: 'Daily admin API limit exceeded. Please try again tomorrow.'
-      };
-    }
-
-    return { allowed: true };
-  } catch (error) {
-    console.error('Native daily admin limit check error:', error);
-    return { allowed: true }; // Fail open
-  }
-}
+// Daily limiters removed - Cloudflare only supports 10 or 60 second periods
+// The per-minute limits are strict enough to prevent abuse
 
 /**
  * Comprehensive rate limit check for any endpoint
@@ -331,23 +269,15 @@ export async function checkComprehensiveRateLimit(request, env, endpointType) {
       const formType = new URL(request.url).pathname.includes('subscribe') ? 'subscribe' :
                       new URL(request.url).pathname.includes('unsubscribe') ? 'unsubscribe' : 'contact';
 
-      // Check hourly form limit
+      // Check form rate limit (2 per minute)
       const formCheck = await checkNativeFormRateLimit(request, env, formType);
       if (!formCheck.allowed) return formCheck;
-
-      // Check daily form limit
-      const formDailyCheck = await checkNativeFormDailyLimit(request, env, formType);
-      if (!formDailyCheck.allowed) return formDailyCheck;
       break;
 
     case 'admin':
-      // Check hourly admin limit
+      // Check admin rate limit (2 per minute)
       const adminCheck = await checkNativeAdminRateLimit(request, env, 'api');
       if (!adminCheck.allowed) return adminCheck;
-
-      // Check daily admin limit
-      const adminDailyCheck = await checkNativeAdminDailyLimit(request, env);
-      if (!adminDailyCheck.allowed) return adminDailyCheck;
       break;
 
     case 'api':

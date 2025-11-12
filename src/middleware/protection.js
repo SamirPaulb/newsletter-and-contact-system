@@ -12,8 +12,6 @@ import {
   checkNativeAdminRateLimit,
   checkNativeBurstRateLimit,
   checkNativeApiRateLimit,
-  checkNativeFormDailyLimit,
-  checkNativeAdminDailyLimit,
   checkComprehensiveRateLimit
 } from '../utils/nativeRateLimit.js';
 
@@ -70,11 +68,32 @@ export async function protectRequest(request, env, config) {
   const pathname = url.pathname;
   let rateCheckResult = null;
 
-  // FIRST: Check burst protection (prevents rapid-fire requests)
+  // LAYER 1: Check for suspicious endpoints first (immediate blocking)
+  const suspiciousEndpoints = ['/wp-admin', '/.env', '/config.php', '/.git', '/admin.php',
+                               '/wp-login.php', '/xmlrpc.php', '/.aws', '/phpmyadmin'];
+  if (suspiciousEndpoints.some(endpoint => pathname.includes(endpoint))) {
+    console.log(`Suspicious endpoint access blocked: ${clientIp} on ${pathname}`);
+    // Log for monitoring
+    await env.KV.put(
+      `${config.PREFIX_BOT}attack:${clientIp}:${Date.now()}`,
+      JSON.stringify({
+        path: pathname,
+        userAgent: request.headers.get('user-agent'),
+        timestamp: new Date().toISOString()
+      }),
+      { expirationTtl: 86400 } // 24 hours
+    );
+    return new Response('Forbidden', {
+      status: 403,
+      headers: { 'Content-Type': 'text/plain' }
+    });
+  }
+
+  // LAYER 2: Check burst protection (prevents rapid-fire requests)
   rateCheckResult = await checkNativeBurstRateLimit(request, env);
   if (!rateCheckResult.allowed) {
     console.log(`Burst rate limit blocked ${clientIp} on ${pathname}`);
-    return new Response(rateCheckResult.reason || 'Too many requests in a short time. Please slow down.', {
+    return new Response('Too many requests. Slow down!', {
       status: 429,
       headers: {
         'Retry-After': '10',
@@ -83,11 +102,11 @@ export async function protectRequest(request, env, config) {
     });
   }
 
-  // SECOND: Check global rate limit
+  // LAYER 3: Check global rate limit (20 per minute)
   rateCheckResult = await checkNativeGlobalRateLimit(request, env);
   if (!rateCheckResult.allowed) {
-    console.log(`Native global rate limit blocked ${clientIp} on ${pathname}`);
-    return new Response(rateCheckResult.reason || 'Rate limit exceeded', {
+    console.log(`Global rate limit blocked ${clientIp} on ${pathname}`);
+    return new Response('Rate limit exceeded. Please wait.', {
       status: 429,
       headers: {
         'Retry-After': '60',
@@ -115,27 +134,15 @@ export async function protectRequest(request, env, config) {
       });
     }
 
-    // Check hourly form rate limit
+    // Check form rate limit (2 per minute - strict to prevent abuse and bots)
     rateCheckResult = await checkNativeFormRateLimit(request, env, formType);
     if (!rateCheckResult.allowed) {
-      console.log(`Native form rate limit blocked ${clientIp} on ${formType} form`);
-      return new Response(rateCheckResult.reason || 'Too many form submissions. Please try again later.', {
+      console.log(`Form rate limit BLOCKED: ${clientIp} on ${formType} form - Possible bot/spam attempt`);
+      // Return generic message to not give away rate limit details to attackers
+      return new Response('Too many requests. Please wait a moment and try again.', {
         status: 429,
         headers: {
-          'Retry-After': '3600', // 1 hour
-          'Content-Type': 'text/plain'
-        }
-      });
-    }
-
-    // Check daily form rate limit (most restrictive)
-    rateCheckResult = await checkNativeFormDailyLimit(request, env, formType);
-    if (!rateCheckResult.allowed) {
-      console.log(`Daily form limit blocked ${clientIp} on ${formType} form`);
-      return new Response(rateCheckResult.reason || 'Daily submission limit reached. Please try again tomorrow.', {
-        status: 429,
-        headers: {
-          'Retry-After': '86400', // 24 hours
+          'Retry-After': '60',
           'Content-Type': 'text/plain'
         }
       });
@@ -146,25 +153,12 @@ export async function protectRequest(request, env, config) {
   if (pathname.startsWith('/admin')) {
     const endpoint = pathname.split('/').filter(x => x).join('-'); // e.g., "admin-api-check-now"
 
-    // Check hourly admin rate limit
+    // Check admin rate limit (2 per minute - strict for security)
     rateCheckResult = await checkNativeAdminRateLimit(request, env, endpoint);
     if (!rateCheckResult.allowed) {
       console.log(`Native admin rate limit blocked ${clientIp} on ${endpoint}`);
       // Show Turnstile challenge for admin rate limits
       return showTurnstileChallenge(config);
-    }
-
-    // Check daily admin rate limit
-    rateCheckResult = await checkNativeAdminDailyLimit(request, env);
-    if (!rateCheckResult.allowed) {
-      console.log(`Daily admin limit blocked ${clientIp}`);
-      return new Response('Daily admin access limit reached. Please try again tomorrow.', {
-        status: 429,
-        headers: {
-          'Retry-After': '86400', // 24 hours
-          'Content-Type': 'text/plain'
-        }
-      });
     }
   }
 
@@ -174,34 +168,48 @@ export async function protectRequest(request, env, config) {
     // Global and burst limits already applied above
   }
 
+  // LAYER 4: Bot detection and blocking
+  const userAgent = request.headers.get('user-agent') || '';
+  const userAgentLower = userAgent.toLowerCase();
+
   // Check if it's a bot
   if (isBot(request)) {
-    // Check native bot rate limit (very strict)
+    // Check native bot rate limit (1 per minute - EXTREMELY strict)
     const nativeBotCheck = await checkNativeBotRateLimit(request, env);
     if (!nativeBotCheck.allowed) {
-      console.log(`Native bot rate limit blocked ${clientIp}`);
-      return new Response(nativeBotCheck.reason || 'Bot access restricted', {
+      console.log(`Bot BLOCKED: ${clientIp} - ${userAgent}`);
+      return new Response('Forbidden', {
         status: 403,
         headers: { 'Content-Type': 'text/plain' }
       });
     }
 
-    // Log bot activity (for monitoring, not rate limiting)
+    // Log bot activity
     await env.KV.put(
       `${config.PREFIX_BOT_DETECT}${clientIp}:${Date.now()}`,
       JSON.stringify({
-        userAgent: request.headers.get('user-agent'),
+        userAgent: userAgent,
         path: url.pathname,
         timestamp: new Date().toISOString()
       }),
-      { expirationTtl: config.TTL_BOT_DETECT } // Use config for 24 hours TTL
+      { expirationTtl: config.TTL_BOT_DETECT }
     );
 
-    // Block suspicious bots
-    const suspiciousBots = ['curl', 'wget', 'python', 'scraper'];
-    const userAgent = request.headers.get('user-agent') || '';
-    if (suspiciousBots.some(bot => userAgent.toLowerCase().includes(bot))) {
-      return new Response('Bot access restricted', {
+    // Immediately block harmful bots
+    const blockedBots = ['curl', 'wget', 'python', 'scraper', 'scanner', 'nikto',
+                         'sqlmap', 'nmap', 'masscan', 'zgrab', 'censys', 'shodan'];
+    if (blockedBots.some(bot => userAgentLower.includes(bot))) {
+      console.log(`Malicious bot BLOCKED: ${clientIp} - ${userAgent}`);
+      return new Response('Forbidden', {
+        status: 403,
+        headers: { 'Content-Type': 'text/plain' }
+      });
+    }
+
+    // Block empty user agents (often bots)
+    if (!userAgent || userAgent.length < 10) {
+      console.log(`Empty/suspicious user-agent BLOCKED: ${clientIp}`);
+      return new Response('Forbidden', {
         status: 403,
         headers: { 'Content-Type': 'text/plain' }
       });
