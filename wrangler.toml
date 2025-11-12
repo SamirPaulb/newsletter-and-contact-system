@@ -45,9 +45,10 @@ GMAIL_DAILY_LIMIT = 490
 GMAIL_PER_MINUTE_LIMIT = 20  # Gmail has a per-minute rate limit
 
 # Batching and Pacing (optimized for Gmail limits)
-# With 50 recipients per email (using BCC), we can send to 2450 recipients with 49 emails
+# Gmail allows up to 100 BCC recipients, but we use 95 to be safe
+# With 95 recipients per email, we can send to 4655 recipients with 49 emails
 # To stay under 490 daily limit, we batch carefully
-BATCH_SIZE = 50  # Recipients per batch (matches Gmail BCC limit)
+BATCH_SIZE = 95  # Recipients per batch (95 to be safe, Gmail allows 100 BCC)
 BATCH_WAIT_MINUTES = 3  # Wait between batches to respect per-minute limits
 MAX_POSTS_PER_RUN = 1  # Process one newsletter at a time
 
@@ -62,7 +63,6 @@ PREFIX_EMAIL_QUEUE = "email-queue"
 PREFIX_NEWSLETTER_SENT = "newsletter-sent"
 PREFIX_NEWSLETTER_SENT_URL = "newsletter-sent-url"
 PREFIX_CONTACT = "contact"
-PREFIX_RATELIMIT = "ratelimit"
 PREFIX_CAPTCHA = "captcha"
 PREFIX_BOT = "bot"
 PREFIX_BOT_DETECT = "bot-detect"
@@ -74,19 +74,12 @@ KEEP_PREFIX_DAILY = "daily:last-"
 KEEP_PREFIX_DEPLOYMENT = "deployment:"
 KEEP_PREFIX_STATS = "stats:"
 
-# Rate Limiting and Protection
-RATE_LIMIT_MAX = 5  # Max form submissions per window
-RATE_LIMIT_WINDOW_HOURS = 24  # Window for form submissions
-ADMIN_API_RATE_LIMIT_MAX = 5  # Max admin API calls per IP per window
-ADMIN_API_RATE_LIMIT_WINDOW_HOURS = 24  # Window for admin API rate limiting (in hours)
-GLOBAL_RATE_LIMIT_PER_MINUTE = 30  # Max requests per minute per IP
-GLOBAL_RATE_LIMIT_WINDOW_MS = 60000  # Rate limit window in milliseconds (1 minute)
+# Protection Settings (Rate limiting is handled by native Cloudflare rate limiters below)
 ABUSE_THRESHOLD = 3  # Number of rate limit hits before showing Turnstile
 SUSPICIOUS_ACTIVITY_THRESHOLD = 5  # Suspicious attempts before Turnstile
 STATUS_PAGE_PROTECTION = true  # Require Turnstile for status page
 
 # TTL (Time To Live) Configuration in seconds - for auto-expiring temporary entries
-TTL_RATE_LIMIT = 120  # 2 minutes - Rate limit entries auto-expire
 TTL_BOT_DETECT = 86400  # 24 hours - Bot detection entries auto-expire
 TTL_SUSPICIOUS_ACTIVITY = 3600  # 1 hour - Suspicious activity counters auto-expire
 TTL_ABUSE_COUNTER = 3600  # 1 hour - Abuse counters auto-expire
@@ -128,7 +121,7 @@ DISPOSABLE_DOMAINS = ""
 MAILERLITE_API_URL = "https://connect.mailerlite.com/api"
 # MAILERLITE_FROM_EMAIL = "newsletter@yourdomain.com"  # Optional, uses EMAIL_FROM_ADDRESS if not set
 # MAILERLITE_GROUP_ID = ""  # Optional, group ID to add subscribers to
-MAILERLITE_BATCH_SIZE = 50  # Number of recipients per batch
+MAILERLITE_BATCH_SIZE = 95  # Number of recipients per batch (matching Gmail BCC limit)
 MAILERLITE_BATCH_DELAY = 1000  # Delay between batches in milliseconds
 MAILERLITE_RATE_LIMIT = 120  # API rate limit per minute
 

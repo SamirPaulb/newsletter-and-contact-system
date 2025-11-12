@@ -3,7 +3,7 @@
  */
 
 import { validateEmail, validatePhone, validateRequired, getClientIp, sanitizeHtml } from '../utils/validation.js';
-import { checkRateLimit, verifyTurnstile, storeContact, addSubscriber } from '../utils/kv.js';
+import { verifyTurnstile, storeContact, addSubscriber } from '../utils/kv.js';
 import { checkNativeFormRateLimit } from '../utils/nativeRateLimit.js';
 import { EmailFactory } from '../email/emailFactory.js';
 import { replicateContactToD1, replicateSubscriberToD1 } from '../utils/d1Replication.js';
@@ -79,7 +79,7 @@ async function processContactForm(request, env, config, ctx) {
       return jsonResponse({ error: messageValidation.error }, 400, config);
     }
 
-    // FIRST: Check native rate limit for forms
+    // Check native rate limit for forms (already checked in protection.js, but double-check here)
     const nativeCheck = await checkNativeFormRateLimit(request, env, 'contact');
     if (!nativeCheck.allowed) {
       return jsonResponse({
@@ -88,16 +88,8 @@ async function processContactForm(request, env, config, ctx) {
       }, 429, config);
     }
 
-    // SECOND: Check KV-based rate limit (more restrictive, 24-hour window)
+    // Get client IP for logging
     const clientIp = getClientIp(request);
-    const rateLimit = await checkRateLimit(env, config, clientIp);
-
-    if (!rateLimit.allowed) {
-      return jsonResponse({
-        error: 'Too many submissions. Please try again later.',
-        retryAfter: config.RATE_LIMIT_WINDOW_HOURS * 3600
-      }, 429, config);
-    }
 
     // Verify Turnstile
     if (config.TURNSTILE_SECRET_KEY) {

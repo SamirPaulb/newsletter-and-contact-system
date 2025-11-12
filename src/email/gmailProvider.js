@@ -163,7 +163,7 @@ export class GmailProvider {
       };
     }
     // Split valid recipients into smaller batches to respect Gmail limits
-    const batchSize = 50; // Gmail BCC limit per email
+    const batchSize = config.BATCH_SIZE || 95; // Use config, default to 95 (safe under Gmail's 100 BCC limit)
     const batches = [];
 
     for (let i = 0; i < validRecipients.length; i += batchSize) {

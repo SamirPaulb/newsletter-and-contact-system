@@ -111,10 +111,6 @@ export function buildConfig(env) {
   if (env && env.PREFIX_CONTACT) PREFIX_CONTACT = String(env.PREFIX_CONTACT);
   PREFIX_CONTACT = withColon(PREFIX_CONTACT);
 
-  let PREFIX_RATELIMIT = 'ratelimit';
-  if (env && env.PREFIX_RATELIMIT) PREFIX_RATELIMIT = String(env.PREFIX_RATELIMIT);
-  PREFIX_RATELIMIT = withColon(PREFIX_RATELIMIT);
-
   let PREFIX_CAPTCHA = 'captcha';
   if (env && env.PREFIX_CAPTCHA) PREFIX_CAPTCHA = String(env.PREFIX_CAPTCHA);
   PREFIX_CAPTCHA = withColon(PREFIX_CAPTCHA);
@@ -155,26 +151,7 @@ export function buildConfig(env) {
   let ADMIN_TOKEN = '';
   if (env && env.ADMIN_TOKEN) ADMIN_TOKEN = String(env.ADMIN_TOKEN);
 
-  // Rate Limiting and Protection
-  let RATE_LIMIT_MAX = 5;
-  if (env && env.RATE_LIMIT_MAX) RATE_LIMIT_MAX = parseInt(String(env.RATE_LIMIT_MAX), 10) || 5;
-
-  let RATE_LIMIT_WINDOW_HOURS = 24;
-  if (env && env.RATE_LIMIT_WINDOW_HOURS) RATE_LIMIT_WINDOW_HOURS = parseInt(String(env.RATE_LIMIT_WINDOW_HOURS), 10) || 24;
-
-  // Admin API rate limiting (separate from form rate limiting)
-  let ADMIN_API_RATE_LIMIT_MAX = 5; // Max admin API calls per IP per day
-  if (env && env.ADMIN_API_RATE_LIMIT_MAX) ADMIN_API_RATE_LIMIT_MAX = parseInt(String(env.ADMIN_API_RATE_LIMIT_MAX), 10) || 5;
-
-  let ADMIN_API_RATE_LIMIT_WINDOW_HOURS = 24; // 24 hour window for admin API
-  if (env && env.ADMIN_API_RATE_LIMIT_WINDOW_HOURS) ADMIN_API_RATE_LIMIT_WINDOW_HOURS = parseInt(String(env.ADMIN_API_RATE_LIMIT_WINDOW_HOURS), 10) || 24;
-
-  let GLOBAL_RATE_LIMIT_PER_MINUTE = 30;
-  if (env && env.GLOBAL_RATE_LIMIT_PER_MINUTE) GLOBAL_RATE_LIMIT_PER_MINUTE = parseInt(String(env.GLOBAL_RATE_LIMIT_PER_MINUTE), 10) || 30;
-
-  let GLOBAL_RATE_LIMIT_WINDOW_MS = 60000;
-  if (env && env.GLOBAL_RATE_LIMIT_WINDOW_MS) GLOBAL_RATE_LIMIT_WINDOW_MS = parseInt(String(env.GLOBAL_RATE_LIMIT_WINDOW_MS), 10) || 60000;
-
+  // Protection Settings (Rate limiting is handled by native Cloudflare rate limiters)
   let ABUSE_THRESHOLD = 3;
   if (env && env.ABUSE_THRESHOLD) ABUSE_THRESHOLD = parseInt(String(env.ABUSE_THRESHOLD), 10) || 3;
 
@@ -185,9 +162,6 @@ export function buildConfig(env) {
   if (env && env.STATUS_PAGE_PROTECTION !== undefined) STATUS_PAGE_PROTECTION = String(env.STATUS_PAGE_PROTECTION) === 'true';
 
   // TTL (Time To Live) Configuration in seconds
-  let TTL_RATE_LIMIT = 120; // 2 minutes
-  if (env && env.TTL_RATE_LIMIT) TTL_RATE_LIMIT = parseInt(String(env.TTL_RATE_LIMIT), 10) || 120;
-
   let TTL_BOT_DETECT = 86400; // 24 hours
   if (env && env.TTL_BOT_DETECT) TTL_BOT_DETECT = parseInt(String(env.TTL_BOT_DETECT), 10) || 86400;
 
@@ -337,7 +311,6 @@ export function buildConfig(env) {
     PREFIX_NEWSLETTER_SENT,
     PREFIX_NEWSLETTER_SENT_URL,
     PREFIX_CONTACT,
-    PREFIX_RATELIMIT,
     PREFIX_CAPTCHA,
     PREFIX_BOT,
     PREFIX_BOT_DETECT,
@@ -356,19 +329,12 @@ export function buildConfig(env) {
     // Admin authentication
     ADMIN_TOKEN,
 
-    // Rate Limiting and Protection
-    RATE_LIMIT_MAX,
-    RATE_LIMIT_WINDOW_HOURS,
-    ADMIN_API_RATE_LIMIT_MAX,
-    ADMIN_API_RATE_LIMIT_WINDOW_HOURS,
-    GLOBAL_RATE_LIMIT_PER_MINUTE,
-    GLOBAL_RATE_LIMIT_WINDOW_MS,
+    // Protection Settings
     ABUSE_THRESHOLD,
     SUSPICIOUS_ACTIVITY_THRESHOLD,
     STATUS_PAGE_PROTECTION,
 
     // TTL Configuration
-    TTL_RATE_LIMIT,
     TTL_BOT_DETECT,
     TTL_SUSPICIOUS_ACTIVITY,
     TTL_ABUSE_COUNTER,

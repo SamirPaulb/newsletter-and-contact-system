@@ -128,32 +128,6 @@ export async function removeSubscriber(env, config, email) {
   return { success: true, message: 'Successfully unsubscribed' };
 }
 
-/**
- * Check rate limit
- */
-export async function checkRateLimit(env, config, clientIp) {
-  const key = `${config.PREFIX_RATELIMIT}${clientIp}`;
-  const count = await env.KV.get(key);
-
-  if (count) {
-    const currentCount = parseInt(count, 10);
-    if (currentCount >= config.RATE_LIMIT_MAX) {
-      return { allowed: false, remaining: 0 };
-    }
-
-    await env.KV.put(key, String(currentCount + 1), {
-      expirationTtl: config.RATE_LIMIT_WINDOW_HOURS * 3600
-    });
-
-    return { allowed: true, remaining: config.RATE_LIMIT_MAX - currentCount - 1 };
-  }
-
-  await env.KV.put(key, '1', {
-    expirationTtl: config.RATE_LIMIT_WINDOW_HOURS * 3600
-  });
-
-  return { allowed: true, remaining: config.RATE_LIMIT_MAX - 1 };
-}
 
 /**
  * Verify Turnstile captcha

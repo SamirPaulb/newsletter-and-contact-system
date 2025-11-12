@@ -3,7 +3,7 @@
  */
 
 import { validateEmail, getClientIp } from '../../utils/validation.js';
-import { addSubscriber, checkRateLimit, verifyTurnstile } from '../../utils/kv.js';
+import { addSubscriber, verifyTurnstile } from '../../utils/kv.js';
 import { checkNativeFormRateLimit } from '../../utils/nativeRateLimit.js';
 import { replicateSubscriberToD1 } from '../../utils/d1Replication.js';
 
@@ -65,7 +65,7 @@ async function processSubscription(request, env, config, ctx) {
 
     const email = emailValidation.email;
 
-    // FIRST: Check native rate limit for forms
+    // Check native rate limit for forms (already checked in protection.js, but double-check here)
     const nativeCheck = await checkNativeFormRateLimit(request, env, 'subscribe');
     if (!nativeCheck.allowed) {
       return jsonResponse({
@@ -74,16 +74,8 @@ async function processSubscription(request, env, config, ctx) {
       }, 429, config);
     }
 
-    // SECOND: Check KV-based rate limit (more restrictive, 24-hour window)
+    // Get client IP for Turnstile verification
     const clientIp = getClientIp(request);
-    const rateLimit = await checkRateLimit(env, config, clientIp);
-
-    if (!rateLimit.allowed) {
-      return jsonResponse({
-        error: 'Too many submissions. Please try again later.',
-        retryAfter: config.RATE_LIMIT_WINDOW_HOURS * 3600
-      }, 429, config);
-    }
 
     // Verify Turnstile
     if (config.TURNSTILE_SECRET_KEY) {

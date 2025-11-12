@@ -195,34 +195,33 @@ sequenceDiagram
 EMAIL_PROVIDER = "gmail"  # Options: gmail, mailerlite, worker-email
 
 # Batch Processing
-BATCH_SIZE = 100
-BATCH_WAIT_MINUTES = 5
+BATCH_SIZE = 95           # Recipients per batch (95 to be safe, Gmail allows 100)
+BATCH_WAIT_MINUTES = 3    # Wait between batches
 
 # TTL Configuration (seconds)
-TTL_RATE_LIMIT = 120      # 2 minutes
 TTL_BOT_DETECT = 86400    # 24 hours
 
-# KV-Based Rate Limiting (Second Layer)
-RATE_LIMIT_MAX = 5
-RATE_LIMIT_WINDOW_HOURS = 24
-ADMIN_API_RATE_LIMIT_MAX = 5
-
-# Native Rate Limiting Configuration (First Layer)
+# Native Rate Limiting Configuration (ONLY rate limiting method used)
 # Add these to your wrangler.toml file:
 # [[ratelimits]]
 # name = "GLOBAL_RATE_LIMITER"
 # namespace_id = "1001"
-# simple = { limit = 25, period = 60 }
+# simple = { limit = 20, period = 60 }  # 20 requests per minute
 #
 # [[ratelimits]]
 # name = "FORM_RATE_LIMITER"
 # namespace_id = "1002"
-# simple = { limit = 3, period = 60 }
+# simple = { limit = 2, period = 60 }   # 2 form submissions per minute
 #
 # [[ratelimits]]
 # name = "ADMIN_RATE_LIMITER"
 # namespace_id = "1003"
-# simple = { limit = 5, period = 60 }
+# simple = { limit = 2, period = 60 }   # 2 admin requests per minute
+#
+# [[ratelimits]]
+# name = "BURST_RATE_LIMITER"
+# namespace_id = "1011"
+# simple = { limit = 5, period = 10 }   # 5 requests per 10 seconds
 ```
 
 ### Required Secrets

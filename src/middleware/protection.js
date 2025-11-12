@@ -48,15 +48,9 @@ export async function protectRequest(request, env, config) {
     console.error('Error tracking daily requests:', error);
   }
 
-  // Allow static resources without protection
-  const staticPaths = ['/robots.txt', '/sitemap.xml'];
-  if (staticPaths.includes(url.pathname)) {
+  // Allow robots.txt without protection
+  if (url.pathname === '/robots.txt') {
     return null; // No protection needed
-  }
-
-  // Return empty response for favicon to avoid 404 logs
-  if (url.pathname === '/favicon.ico') {
-    return new Response(null, { status: 204 }); // No Content
   }
 
   // Get client IP
