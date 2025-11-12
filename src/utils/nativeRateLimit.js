@@ -28,7 +28,7 @@ export async function checkNativeGlobalRateLimit(request, env) {
     const { success } = await env.GLOBAL_RATE_LIMITER.limit({ key });
 
     if (!success) {
-      console.log(`Native global rate limit exceeded for ${clientIp} on ${pathname}`);
+      console.log(`Native global rate limit exceeded on ${pathname}`);
       return {
         allowed: false,
         reason: 'Global rate limit exceeded'
@@ -65,7 +65,7 @@ export async function checkNativeFormRateLimit(request, env, formType) {
     const { success } = await env.FORM_RATE_LIMITER.limit({ key });
 
     if (!success) {
-      console.log(`Native form rate limit exceeded for ${clientIp} on ${formType} form`);
+      console.log(`Native form rate limit exceeded on ${formType} form`);
       return {
         allowed: false,
         reason: `Too many ${formType} requests. Please wait a minute and try again.`
@@ -100,7 +100,7 @@ export async function checkNativeAdminRateLimit(request, env, endpoint) {
     const { success } = await env.ADMIN_RATE_LIMITER.limit({ key });
 
     if (!success) {
-      console.log(`Native admin rate limit exceeded for ${clientIp} on ${endpoint}`);
+      console.log(`Native admin rate limit exceeded on ${endpoint}`);
       return {
         allowed: false,
         reason: 'Admin API rate limit exceeded'
@@ -131,7 +131,7 @@ export async function checkNativeBotRateLimit(request, env) {
     const { success } = await env.BOT_RATE_LIMITER.limit({ key: clientIp });
 
     if (!success) {
-      console.log(`Native bot rate limit exceeded for ${clientIp}`);
+      console.log(`Native bot rate limit exceeded`);
       return {
         allowed: false,
         reason: 'Suspicious activity detected. Access restricted.'
@@ -162,7 +162,7 @@ export async function checkNativeNewsletterCheckLimit(request, env) {
     const { success } = await env.NEWSLETTER_CHECK_LIMITER.limit({ key: clientIp });
 
     if (!success) {
-      console.log(`Native newsletter check limit exceeded for ${clientIp}`);
+      console.log(`Native newsletter check limit exceeded`);
       return {
         allowed: false,
         reason: 'Newsletter check rate limit exceeded. Please wait before checking again.'
@@ -195,7 +195,7 @@ export async function checkNativeApiRateLimit(request, env) {
     const { success } = await env.API_RATE_LIMITER.limit({ key });
 
     if (!success) {
-      console.log(`Native API rate limit exceeded for ${clientIp} on ${pathname}`);
+      console.log(`Native API rate limit exceeded on ${pathname}`);
       return {
         allowed: false,
         reason: 'API rate limit exceeded'
@@ -225,7 +225,7 @@ export async function checkNativeBurstRateLimit(request, env) {
     const { success } = await env.BURST_RATE_LIMITER.limit({ key: clientIp });
 
     if (!success) {
-      console.log(`Native burst rate limit exceeded for ${clientIp}`);
+      console.log(`Native burst rate limit exceeded`);
       return {
         allowed: false,
         reason: 'Too many requests in a short time. Please slow down.'

@@ -13,9 +13,10 @@ A production-ready, serverless newsletter and contact form management system bui
 ### Security & Protection
 - **Admin Panel Security**: Session-only authentication, no external API access
 - **Bot Protection**: Cloudflare Turnstile CAPTCHA integration
-- **Two-Layer Rate Limiting**:
-  - Native Cloudflare Rate Limiting (cached, no KV costs)
-  - KV-based fallback for granular control
+- **Native Rate Limiting Only**:
+  - Uses Cloudflare's built-in Rate Limiting API exclusively
+  - No KV operations for rate limiting (prevents hitting free tier limits)
+  - Multi-layer protection: burst, global, forms, admin, API, bot
 - **XSS Protection**: Comprehensive input sanitization
 - **No PII Exposure**: Customer data never exposed through APIs
 
@@ -128,7 +129,6 @@ src/
 │   ├── status.js              # System status page
 │   └── admin.js               # Admin panel interface
 └── utils/
-    ├── adminRateLimit.js      # Admin-specific rate limiting
     ├── kv.js                  # KV storage utilities
     ├── d1Replication.js       # D1 database replication (async)
     ├── validation.js          # Input validation & sanitization
@@ -143,17 +143,14 @@ src/
 - **Admin Panel**: Session-based authentication only
 - **API Access**: Completely disabled for maximum security
 - **Turnstile Protection**: All forms require CAPTCHA validation
-- **Two-Layer Rate Limiting**:
-  - **Native Rate Limiting** (First Layer - No KV costs):
-    - Global: 25 requests per minute per IP
-    - Forms: 3 requests per minute per IP
-    - Admin: 5 requests per minute per IP
-    - Newsletter Check: 10 requests per minute per IP
-    - Bot Detection: 1 request per minute for suspicious IPs
-  - **KV-Based Rate Limiting** (Second Layer - More restrictive):
-    - Forms: 5 submissions per 24 hours per IP
-    - Admin API: 5 requests per 24 hours per IP
-    - Global: 30 requests per minute per IP
+- **Native Rate Limiting Only** (No KV operations):
+  - **Burst Protection**: 5 requests per 10 seconds (prevents rapid-fire attacks)
+  - **Global**: 20 requests per minute per IP
+  - **Forms**: 2 requests per minute per IP (subscribe, unsubscribe, contact)
+  - **Admin**: 2 requests per minute per IP
+  - **API Endpoints**: 3 requests per minute per IP
+  - **Newsletter Check**: 2 requests per minute per IP
+  - **Bot Detection**: 1 request per minute for suspicious user agents
 
 ### Data Protection
 - **No PII Exposure**: Customer emails/IPs never returned in API responses
@@ -173,7 +170,7 @@ sequenceDiagram
 
     User->>CF: Subscribe Request
     CF->>CF: Validate Turnstile
-    CF->>CF: Check Rate Limit
+    CF->>CF: Check Native Rate Limit
     CF->>KV: Store Subscriber
     CF-->>D1: Async Replicate (waitUntil)
     CF->>User: Success Response

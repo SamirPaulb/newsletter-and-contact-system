@@ -72,7 +72,7 @@ export async function protectRequest(request, env, config) {
   const suspiciousEndpoints = ['/wp-admin', '/.env', '/config.php', '/.git', '/admin.php',
                                '/wp-login.php', '/xmlrpc.php', '/.aws', '/phpmyadmin'];
   if (suspiciousEndpoints.some(endpoint => pathname.includes(endpoint))) {
-    console.log(`Suspicious endpoint access blocked: ${clientIp} on ${pathname}`);
+    console.log(`Suspicious endpoint access blocked: ${pathname}`);
     // Log for monitoring
     await env.KV.put(
       `${config.PREFIX_BOT}attack:${clientIp}:${Date.now()}`,
@@ -92,7 +92,7 @@ export async function protectRequest(request, env, config) {
   // LAYER 2: Check burst protection (prevents rapid-fire requests)
   rateCheckResult = await checkNativeBurstRateLimit(request, env);
   if (!rateCheckResult.allowed) {
-    console.log(`Burst rate limit blocked ${clientIp} on ${pathname}`);
+    console.log(`Burst rate limit blocked on ${pathname}`);
     return new Response('Too many requests. Slow down!', {
       status: 429,
       headers: {
@@ -105,7 +105,7 @@ export async function protectRequest(request, env, config) {
   // LAYER 3: Check global rate limit (20 per minute)
   rateCheckResult = await checkNativeGlobalRateLimit(request, env);
   if (!rateCheckResult.allowed) {
-    console.log(`Global rate limit blocked ${clientIp} on ${pathname}`);
+    console.log(`Global rate limit blocked on ${pathname}`);
     return new Response('Rate limit exceeded. Please wait.', {
       status: 429,
       headers: {
@@ -124,7 +124,7 @@ export async function protectRequest(request, env, config) {
     // Check API rate limit
     rateCheckResult = await checkNativeApiRateLimit(request, env);
     if (!rateCheckResult.allowed) {
-      console.log(`API rate limit blocked ${clientIp} on ${pathname}`);
+      console.log(`API rate limit blocked on ${pathname}`);
       return new Response(rateCheckResult.reason || 'API rate limit exceeded', {
         status: 429,
         headers: {
@@ -137,7 +137,7 @@ export async function protectRequest(request, env, config) {
     // Check form rate limit (2 per minute - strict to prevent abuse and bots)
     rateCheckResult = await checkNativeFormRateLimit(request, env, formType);
     if (!rateCheckResult.allowed) {
-      console.log(`Form rate limit BLOCKED: ${clientIp} on ${formType} form - Possible bot/spam attempt`);
+      console.log(`Form rate limit BLOCKED: ${formType} form - Possible bot/spam attempt`);
       // Return generic message to not give away rate limit details to attackers
       return new Response('Too many requests. Please wait a moment and try again.', {
         status: 429,
@@ -156,7 +156,7 @@ export async function protectRequest(request, env, config) {
     // Check admin rate limit (2 per minute - strict for security)
     rateCheckResult = await checkNativeAdminRateLimit(request, env, endpoint);
     if (!rateCheckResult.allowed) {
-      console.log(`Native admin rate limit blocked ${clientIp} on ${endpoint}`);
+      console.log(`Native admin rate limit blocked on ${endpoint}`);
       // Show Turnstile challenge for admin rate limits
       return showTurnstileChallenge(config);
     }
@@ -177,7 +177,7 @@ export async function protectRequest(request, env, config) {
     // Check native bot rate limit (1 per minute - EXTREMELY strict)
     const nativeBotCheck = await checkNativeBotRateLimit(request, env);
     if (!nativeBotCheck.allowed) {
-      console.log(`Bot BLOCKED: ${clientIp} - ${userAgent}`);
+      console.log(`Bot BLOCKED - User-Agent: ${userAgent.substring(0, 50)}...`);
       return new Response('Forbidden', {
         status: 403,
         headers: { 'Content-Type': 'text/plain' }
@@ -199,7 +199,7 @@ export async function protectRequest(request, env, config) {
     const blockedBots = ['curl', 'wget', 'python', 'scraper', 'scanner', 'nikto',
                          'sqlmap', 'nmap', 'masscan', 'zgrab', 'censys', 'shodan'];
     if (blockedBots.some(bot => userAgentLower.includes(bot))) {
-      console.log(`Malicious bot BLOCKED: ${clientIp} - ${userAgent}`);
+      console.log(`Malicious bot BLOCKED: ${blockedBots.find(bot => userAgentLower.includes(bot))} detected`);
       return new Response('Forbidden', {
         status: 403,
         headers: { 'Content-Type': 'text/plain' }
@@ -208,7 +208,7 @@ export async function protectRequest(request, env, config) {
 
     // Block empty user agents (often bots)
     if (!userAgent || userAgent.length < 10) {
-      console.log(`Empty/suspicious user-agent BLOCKED: ${clientIp}`);
+      console.log(`Empty/suspicious user-agent BLOCKED`);
       return new Response('Forbidden', {
         status: 403,
         headers: { 'Content-Type': 'text/plain' }

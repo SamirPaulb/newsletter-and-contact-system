@@ -137,25 +137,54 @@ async function discoverFromRssAndQueue(env, config) {
 
     console.log(`Found ${items.length} items in feed (type: ${feedType})`);
 
-    let created = 0;
-    for (const item of items) {
-      if (created >= config.MAX_POSTS_PER_RUN) break;
+    // Step 1: Find all unsent posts
+    const unsentPosts = [];
+    console.log(`Checking which posts have not been sent yet...`);
 
-      // Item.url is already normalized by the parser
-      const normUrl = item.url;
+    for (const item of items) {
+      // IMPORTANT: Normalize URL consistently to prevent duplicates
+      const normUrl = normalizeUrl(item.url);
       const postId = postIdFromNormalizedUrl(normUrl) || item.guid || item.title || normUrl;
 
       if (!postId) continue;
 
-      // Check if already sent
+      // Check if already sent (using normalized URL)
       const already = await alreadySent(env, config, postId, normUrl);
       if (already) {
-        console.log(`Post already sent: ${postId}`);
+        console.log(`✓ Already sent: ${item.title}`);
         continue;
       }
 
+      console.log(`✗ Not sent yet: ${item.title}`);
+      unsentPosts.push({
+        item: item,
+        normUrl: normUrl,
+        postId: postId
+      });
+    }
+
+    console.log(`Found ${unsentPosts.length} unsent posts out of ${items.length} total posts`);
+
+    // Step 2: Create queues for unsent posts (respecting MAX_POSTS_PER_RUN)
+    let created = 0;
+    for (const unsentPost of unsentPosts) {
+      if (created >= config.MAX_POSTS_PER_RUN) {
+        console.log(`Reached max posts per run (${config.MAX_POSTS_PER_RUN}). Remaining posts will be sent in next run.`);
+        break;
+      }
+
+      const { item, normUrl, postId } = unsentPost;
+
       // Create queue entry with enriched data
       const queueKey = `${config.PREFIX_EMAIL_QUEUE}${postId}`;
+
+      // Check if queue already exists (in case of interrupted processing)
+      const existingQueue = await env.KV.get(queueKey);
+      if (existingQueue) {
+        console.log(`Queue already exists for: ${item.title} (will resume processing)`);
+        continue;
+      }
+
       const queueData = {
         post: {
           url: normUrl,
@@ -177,10 +206,10 @@ async function discoverFromRssAndQueue(env, config) {
 
       await env.KV.put(queueKey, JSON.stringify(queueData));
       created++;
-      console.log(`Created queue for post: ${item.title}`);
+      console.log(`Created queue #${created} for post: ${item.title}`);
     }
 
-    console.log(`Created ${created} new queue(s)`);
+    console.log(`Created ${created} new queue(s) for unsent posts`);
   } catch (error) {
     console.error('Error in discoverFromRssAndQueue:', error);
   }
@@ -373,14 +402,44 @@ async function finalizeQueue(env, config, queueKey, queue) {
 
 /**
  * Check if post was already sent
+ * IMPORTANT: Only skip sending if BOTH keys exist in KV
+ * If either key is missing, the newsletter will be sent
  */
 async function alreadySent(env, config, postId, normUrl) {
+  // Check both by post ID and by normalized URL
+  const postIdKey = `${config.PREFIX_NEWSLETTER_SENT}${postId}`;
+  const urlKey = `${config.PREFIX_NEWSLETTER_SENT_URL}${encodeURIComponent(normUrl)}`;
+
+  console.log(`Checking if already sent - PostID: ${postId}, URL: ${normUrl}`);
+  console.log(`  Checking keys: ${postIdKey} and ${urlKey}`);
+
   const [byId, byUrl] = await Promise.all([
-    env.KV.get(`${config.PREFIX_NEWSLETTER_SENT}${postId}`),
-    env.KV.get(`${config.PREFIX_NEWSLETTER_SENT_URL}${encodeURIComponent(normUrl)}`)
+    env.KV.get(postIdKey),
+    env.KV.get(urlKey)
   ]);
 
-  return !!(byId || byUrl);
+  const hasPostIdKey = !!byId;
+  const hasUrlKey = !!byUrl;
+
+  console.log(`  PostID key exists: ${hasPostIdKey}`);
+  console.log(`  URL key exists: ${hasUrlKey}`);
+
+  // BOTH keys must exist to skip sending
+  if (hasPostIdKey && hasUrlKey) {
+    console.log(`  ✓ BOTH keys found - SKIP sending (already sent)`);
+    return true;
+  }
+
+  // If either key is missing, send the newsletter
+  if (!hasPostIdKey && !hasUrlKey) {
+    console.log(`  ✗ NEITHER key found - WILL SEND (new post)`);
+  } else if (!hasPostIdKey) {
+    console.log(`  ⚠️ PostID key missing - WILL SEND (fixing incomplete record)`);
+  } else if (!hasUrlKey) {
+    console.log(`  ⚠️ URL key missing - WILL SEND (fixing incomplete record)`);
+  }
+
+  return false;
 }
 
 
